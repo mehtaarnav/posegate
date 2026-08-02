@@ -1,9 +1,18 @@
 # posegate/posegate/autopsy.py
 import prolif
 from rdkit import Chem
-from typing import List, Dict, Any, Optional
+from typing import List, Dict, Any, Optional, Sequence, Tuple, Union
 
 from posegate.receptor_prep import load_receptor_mol
+
+# A conserved-contact residue, as (3-letter name, number, chain id).
+ConservedResidue = Tuple[str, int, str]
+
+# BRD4's Asn140 acetyl-lysine-mimetic contact, the constraint this module
+# was originally written around. Retained as the default only so existing
+# BRD4 calls keep working; it is not a sensible default for any other
+# target, and callers are expected to pass their own (from the miner).
+DEFAULT_CONSERVED_RESIDUES: List[ConservedResidue] = [('ASN', 140, 'A')]
 
 VDW_RADII = {
     'H': 1.20, 'C': 1.70, 'N': 1.55, 'O': 1.52,
@@ -109,39 +118,88 @@ def find_aromatic_contacts(
 
     return aromatic
 
+def normalize_conserved_residues(
+    residues: Union[ConservedResidue, Sequence[ConservedResidue]]
+) -> List[ConservedResidue]:
+    """Accepts either a single (name, number, chain) tuple or a sequence of
+    them, and returns a list. A bare 3-tuple of (str, int, str) is
+    ambiguous with a sequence of residues, so it is detected explicitly."""
+    if (
+        len(residues) == 3
+        and isinstance(residues[0], str)
+        and isinstance(residues[1], int)
+        and isinstance(residues[2], str)
+    ):
+        return [tuple(residues)]  # type: ignore[list-item]
+    return [tuple(r) for r in residues]  # type: ignore[misc]
+
+
 def find_conserved_hbond(
     ligand_mol: Chem.Mol, receptor_mol: Chem.Mol,
-    residue_name: str = 'ASN', residue_number: int = 140, chain_id: str = 'A',
+    residues: Union[ConservedResidue, Sequence[ConservedResidue], None] = None,
+    mode: str = 'any',
     ifp: Optional[IFP] = None
 ) -> List[Dict[str, Any]]:
-    """Checks specifically for an H-bond to a named, conserved receptor
-    residue (e.g. BRD4's Asn140, the key acetyl-lysine-mimetic contact that
-    essentially all bromodomain inhibitors, including JQ1, engage)."""
+    """Checks for H-bonds to one or more named, conserved receptor residues.
+
+    Args:
+        residues: a single (name, number, chain) tuple, or a sequence of
+            them. Defaults to BRD4's Asn140. Several targets' defining
+            pharmacophores are not a single residue: estrogen receptor
+            alpha's charge clamp is Glu353 plus Arg394, and HIV-1
+            protease's catalytic dyad is Asp25 on each chain of the
+            homodimer.
+        mode: 'any' (default) counts the constraint satisfied when at
+            least one listed residue is H-bonded; 'all' requires every
+            listed residue to be H-bonded, and returns no hbonds unless
+            they all are.
+
+    Note that a multi-residue constraint in 'any' mode is easier to
+    satisfy than a single-residue one, and in 'all' mode harder. When
+    comparing this feature's behaviour across targets whose pharmacophores
+    differ in size, that difference in base rate is a property of the
+    constraint, not of the poses.
+    """
+    if mode not in ('any', 'all'):
+        raise ValueError(f"mode must be 'any' or 'all', got {mode!r}")
+
+    residue_list = normalize_conserved_residues(
+        residues if residues is not None else DEFAULT_CONSERVED_RESIDUES
+    )
     ifp = ifp if ifp is not None else build_ifp(ligand_mol, receptor_mol)
-    hbonds = []
+
+    per_residue: Dict[ConservedResidue, List[Dict[str, Any]]] = {r: [] for r in residue_list}
 
     for (_, pres), interactions in ifp.items():
-        if not (pres.name == residue_name and pres.number == residue_number and pres.chain == chain_id):
-            continue
-        for meta in interactions.get('HBDonor', ()):
-            hbonds.append({
-                'type': f'L_Donor -> {residue_name}{residue_number}',
-                'distance_A': round(meta['distance'], 2),
-                'angle_deg': round(meta['DHA_angle'], 1)
-            })
-        for meta in interactions.get('HBAcceptor', ()):
-            hbonds.append({
-                'type': f'{residue_name}{residue_number} Donor -> L_Acceptor',
-                'distance_A': round(meta['distance'], 2),
-                'angle_deg': round(meta['DHA_angle'], 1)
-            })
+        for residue in residue_list:
+            residue_name, residue_number, chain_id = residue
+            if not (pres.name == residue_name and pres.number == residue_number
+                    and pres.chain == chain_id):
+                continue
+            for meta in interactions.get('HBDonor', ()):
+                per_residue[residue].append({
+                    'type': f'L_Donor -> {residue_name}{residue_number}',
+                    'residue': f'{residue_name}{residue_number}.{chain_id}',
+                    'distance_A': round(meta['distance'], 2),
+                    'angle_deg': round(meta['DHA_angle'], 1)
+                })
+            for meta in interactions.get('HBAcceptor', ()):
+                per_residue[residue].append({
+                    'type': f'{residue_name}{residue_number} Donor -> L_Acceptor',
+                    'residue': f'{residue_name}{residue_number}.{chain_id}',
+                    'distance_A': round(meta['distance'], 2),
+                    'angle_deg': round(meta['DHA_angle'], 1)
+                })
 
-    return hbonds
+    if mode == 'all' and not all(per_residue[r] for r in residue_list):
+        return []
+
+    return [hb for r in residue_list for hb in per_residue[r]]
 
 def generate_autopsy_report(
     ligand_sdf_path: str, receptor_pdb_path: str, vina_score: float,
-    conserved_residue_name: str = 'ASN', conserved_residue_number: int = 140,
-    conserved_chain_id: str = 'A'
+    conserved_residues: Union[ConservedResidue, Sequence[ConservedResidue], None] = None,
+    conserved_mode: str = 'any'
 ) -> Dict[str, Any]:
     ligand_mol = Chem.MolFromMolFile(ligand_sdf_path, removeHs=False)
     if receptor_pdb_path.endswith('.pkl'):
@@ -170,8 +228,7 @@ def generate_autopsy_report(
         'hbonds': find_hydrogen_bonds(ligand_mol, receptor_mol, ifp=ifp),
         'conserved_hbond': find_conserved_hbond(
             ligand_mol, receptor_mol,
-            residue_name=conserved_residue_name, residue_number=conserved_residue_number,
-            chain_id=conserved_chain_id, ifp=ifp
+            residues=conserved_residues, mode=conserved_mode, ifp=ifp
         ),
         'aromatic': find_aromatic_contacts(ligand_mol, receptor_mol, ifp=ifp),
         'clashes': evaluate_steric_clashes(ligand_mol, receptor_mol, ifp=ifp),
@@ -194,11 +251,17 @@ def generate_autopsy_report(
     # 65 compounds; treat these specific numbers as provisional until
     # validated on more targets, not as universal constants.
     #
-    # Notably: generic hbond_count got a *positive* (penalizing) weight —
-    # in this benchmark, decoys (property-matched on donor/acceptor counts
-    # to actives, so equally capable of forming *some* H-bond) tended to
-    # have more generic/incidental H-bonds than actives, while the
-    # *specific* conserved_hbond contact remained a strong reward.
+    # Generic hbond_count got a positive (penalizing) weight: in this
+    # benchmark, decoys tended to form more generic/incidental H-bonds
+    # than actives, while the specific conserved_hbond contact remained a
+    # strong reward. An earlier version of this comment attributed that to
+    # the decoys being property-matched on donor/acceptor counts, which
+    # they were not: the decoy selection in scripts/fetch_brd4_dataset.py
+    # matched only molecular weight, logP and rotatable bonds, so actives
+    # and decoys were free to differ in how many H-bonds they could form
+    # at all. scripts/fetch_benchmark_dataset.py now also matches donor
+    # and acceptor counts, so these weights should be refitted from a
+    # benchmark rebuilt with that script before they are relied on.
     # aromatic_count was regularized to exactly zero (not useful here).
     posegate_score = report['vina_score']
     posegate_score += 2.706 * len(report['hbonds'])
