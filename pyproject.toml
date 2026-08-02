@@ -18,7 +18,14 @@ dependencies = [
     "pandas",
     "numpy",
     "scipy",
+    "scikit-learn",
+    "vina",
+    "openmm",
+    "pdbfixer",
 ]
+# openbabel is also required (used via CLI in posegate.docking) but has no
+# pip-installable Python wheel with the CLI bundled; install it via conda
+# (see environment.yml) or your system package manager.
 
 [project.optional-dependencies]
 dev = [
