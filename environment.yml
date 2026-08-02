@@ -1,0 +1,20 @@
+name: posegate
+channels:
+  - conda-forge
+  - defaults
+dependencies:
+  - python=3.10
+  - rdkit
+  - openbabel
+  - meeko
+  - vina
+  - pandas
+  - numpy
+  - scipy
+  - pytest
+  - pdbfixer
+  - propka
+  - scikit-learn
+  - pip
+  - pip:
+      - prolif
