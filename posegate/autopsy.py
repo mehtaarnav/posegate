@@ -139,7 +139,9 @@ def find_conserved_hbond(
     return hbonds
 
 def generate_autopsy_report(
-    ligand_sdf_path: str, receptor_pdb_path: str, vina_score: float
+    ligand_sdf_path: str, receptor_pdb_path: str, vina_score: float,
+    conserved_residue_name: str = 'ASN', conserved_residue_number: int = 140,
+    conserved_chain_id: str = 'A'
 ) -> Dict[str, Any]:
     ligand_mol = Chem.MolFromMolFile(ligand_sdf_path, removeHs=False)
     if receptor_pdb_path.endswith('.pkl'):
@@ -166,7 +168,11 @@ def generate_autopsy_report(
     report = {
         'vina_score': vina_score,
         'hbonds': find_hydrogen_bonds(ligand_mol, receptor_mol, ifp=ifp),
-        'conserved_hbond': find_conserved_hbond(ligand_mol, receptor_mol, ifp=ifp),
+        'conserved_hbond': find_conserved_hbond(
+            ligand_mol, receptor_mol,
+            residue_name=conserved_residue_name, residue_number=conserved_residue_number,
+            chain_id=conserved_chain_id, ifp=ifp
+        ),
         'aromatic': find_aromatic_contacts(ligand_mol, receptor_mol, ifp=ifp),
         'clashes': evaluate_steric_clashes(ligand_mol, receptor_mol, ifp=ifp),
         'decision': 'PENDING',

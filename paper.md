@@ -128,8 +128,27 @@ an otherwise genuine close contact; and an HIV-1 protease catalytic-aspartate ch
 traced to a real per-structure asymmetry in the underlying data, consistent with known
 pseudo-symmetric-inhibitor binding behavior rather than a detection artifact. The screening/pose-
 ranking component of the tool is weaker and reported as such rather than polished: its fitted
-score reaches a cross-validated AUC-ROC of 0.62 against a raw-Vina baseline of 0.53 on one
-65-compound benchmark, a real but modest improvement not yet shown to generalize across targets.
+score reaches a cross-validated AUC-ROC of 0.62 against a raw-Vina baseline of 0.53 on the
+65-compound BRD4 benchmark it was fit on, a real but modest improvement.
+
+We then tested directly whether those BRD4-fitted weights transfer to a second target, building
+an equivalent 51-compound benchmark for CDK2 (17 ChEMBL actives, 34 property-matched decoys) and
+applying the same fixed weights, unmodified, with CDK2's own literature-validated pharmacophore
+(the Leu83 hinge contact, discovered by the miner) substituted for BRD4's Asn140. They do not
+transfer: AUC-ROC is 0.35 (95% CI [0.20, 0.51]), worse than the already-weak raw-Vina baseline on
+this benchmark (0.37). Raw Vina score being sub-random on CDK2 here shows part of the shortfall is
+this particular docking run, not the fitted weights alone -- but the weights make it measurably
+worse, and we can say precisely why: on BRD4, decoys (property-matched on donor/acceptor count)
+formed *more* incidental hydrogen bonds than actives, so the fit penalizes hydrogen-bond count; on
+CDK2, the same benchmark construction shows the opposite pattern (actives average 2.0 H-bonds,
+decoys 1.4), so the BRD4-derived penalty punishes exactly the signal that is real on this target.
+The conserved-contact-hit feature and the clash-count feature keep the same, correct-direction
+relationship to activity on both targets; the generic hydrogen-bond-count feature does not. The
+practical implication is direct: whether a given structural feature predicts activity is itself
+target-dependent, so a single fixed-sign weight fit on one target's docking output should not be
+assumed to transfer to another -- feature weights need to be refit per target, or restricted to
+the features (like the conserved-contact hit) whose relationship to activity is mechanistically
+target-general rather than empirically fit.
 
 # Acknowledgements
 

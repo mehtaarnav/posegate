@@ -25,15 +25,18 @@ def compute_ligand_box_size(sdf_path: str, margin: float = 8.0, min_size: float 
     extent = coords.max(axis=0) - coords.min(axis=0)
     return [max(float(e) + margin, min_size) for e in extent]
 
-def select_restrained_pose(dock_res: dict, receptor_mol, n_poses: int):
+def select_restrained_pose(dock_res: dict, receptor_mol, n_poses: int, conserved_residue: tuple):
     """Vina's scoring function has no restraint term, so this applies the
-    Asn140 restraint as a pose *selection* filter after the fact: among
-    Vina's top n_poses candidates, pick the best-scoring one that actually
-    satisfies the conserved H-bond, falling back to the single best-scoring
-    pose (restraint unmet) if none of them do. Takes the already-loaded
-    receptor Mol (see posegate.receptor_prep) rather than a path, since
-    this is called once per ligand and re-parsing the receptor from disk
-    each time would be wasteful."""
+    conserved-contact restraint as a pose *selection* filter after the
+    fact: among Vina's top n_poses candidates, pick the best-scoring one
+    that actually satisfies it, falling back to the single best-scoring
+    pose (restraint unmet) if none do. Takes the already-loaded receptor
+    Mol (see posegate.receptor_prep) rather than a path, since this is
+    called once per ligand and re-parsing from disk each time would be
+    wasteful. conserved_residue is (residue_name, residue_number, chain_id)
+    -- this is target-specific (e.g. BRD4's Asn140, CDK2's Leu83), not a
+    fixed default, so it must be supplied by the caller."""
+    residue_name, residue_number, chain_id = conserved_residue
     pose_file = dock_res['pose_file']
     split_prefix = pose_file.replace('.pdbqt', '_p')
     subprocess.run(f"obabel {pose_file} -O {split_prefix}.sdf -m", shell=True, capture_output=True)
@@ -45,7 +48,8 @@ def select_restrained_pose(dock_res: dict, receptor_mol, n_poses: int):
         lig = Chem.MolFromMolFile(pose_sdf, removeHs=False)
         if lig is None:
             continue
-        if find_conserved_hbond(lig, receptor_mol):
+        if find_conserved_hbond(lig, receptor_mol, residue_name=residue_name,
+                                 residue_number=residue_number, chain_id=chain_id):
             return pose_sdf, score, True
 
     fallback_sdf = f"{split_prefix}1.sdf"
@@ -58,7 +62,11 @@ def main():
     parser.add_argument("--center", nargs=3, type=float, required=True, help="X Y Z center")
     parser.add_argument("--exhaustiveness", type=int, default=32, help="Vina search exhaustiveness")
     parser.add_argument("--n_poses", type=int, default=9, help="Vina poses per ligand, for restraint-guided selection")
+    parser.add_argument("--conserved_residue_name", default="ASN", help="Conserved-contact residue 3-letter code")
+    parser.add_argument("--conserved_residue_number", type=int, default=140, help="Conserved-contact residue number")
+    parser.add_argument("--conserved_chain_id", default="A", help="Conserved-contact residue chain")
     args = parser.parse_args()
+    conserved_residue = (args.conserved_residue_name, args.conserved_residue_number, args.conserved_chain_id)
 
     # Dock against the same heterogen-free, hydrogenated receptor used for
     # autopsy (args.receptor_pdb is the raw crystal file and still contains
@@ -94,9 +102,16 @@ def main():
                 box_size=box_size, exhaustiveness=args.exhaustiveness, n_poses=args.n_poses
             )
 
-            docked_sdf, selected_score, restraint_met = select_restrained_pose(dock_res, receptor_mol, args.n_poses)
+            docked_sdf, selected_score, restraint_met = select_restrained_pose(
+                dock_res, receptor_mol, args.n_poses, conserved_residue
+            )
 
-            report = generate_autopsy_report(docked_sdf, receptor_pkl, selected_score)
+            report = generate_autopsy_report(
+                docked_sdf, receptor_pkl, selected_score,
+                conserved_residue_name=conserved_residue[0],
+                conserved_residue_number=conserved_residue[1],
+                conserved_chain_id=conserved_residue[2]
+            )
             # Stash per-molecule bookkeeping directly on the report dict so
             # it survives the rank_batch() re-ranking pass below.
             report['name'] = name

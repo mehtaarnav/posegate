@@ -124,10 +124,21 @@ polished: on a 65-compound BRD4 benchmark (22 actives, 43 property-matched decoy
 score achieves AUC-ROC 0.53 (95% CI [0.37, 0.68]) — indistinguishable from random at this
 sample size. `posegate`'s fitted `posegate_score` (weights from L2-regularized logistic
 regression against this benchmark, not hand-picked — see `scripts/recalibrate_weights.py`)
-reaches a cross-validated AUC-ROC of 0.62: a real improvement, but calibrated on one target and
-65 compounds, not yet shown to generalize. Notably, generic H-bond count gets a *penalizing*
-weight in the fit — property-matched decoys form just as many incidental H-bonds as actives, so
-only the *specific* conserved contact actually discriminates. Full discussion in `paper.md`.
+reaches a cross-validated AUC-ROC of 0.62 *on the target it was fit on*. Notably, generic H-bond
+count gets a *penalizing* weight in the fit — property-matched decoys form just as many
+incidental H-bonds as actives, so only the *specific* conserved contact actually discriminates.
+
+**Transferability was tested directly, and the fixed weights do not transfer.** Applying the
+same BRD4-fitted weights unmodified to an equivalent 51-compound CDK2 benchmark (CDK2's own
+Leu83 hinge contact substituted for BRD4's Asn140) gives AUC-ROC 0.35 — worse than raw Vina's
+already-weak 0.37 on that benchmark. The reason is diagnosed, not just observed: on CDK2, actives
+average *more* H-bonds than decoys (2.0 vs. 1.4) — the opposite pattern from BRD4 — so the
+BRD4-derived H-bond penalty punishes exactly the signal that's real on CDK2. The
+conserved-contact-hit and clash-count features keep the correct-direction relationship to
+activity on both targets; generic H-bond count does not. Practical upshot: whether a feature
+predicts activity is itself target-dependent, so per-target refitting (or restricting to
+mechanistically target-general features like the conserved-contact hit) is necessary, not
+optional. Full discussion in `paper.md`.
 
 ### Notes on receptor preparation
 
