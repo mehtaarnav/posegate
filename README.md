@@ -9,12 +9,11 @@
 
 </div>
 
-Docking gives you a pose and a score. `posegate` tells you *why* that pose is or isn't
-trustworthy — which interactions it makes, whether they include the residues a real
-inhibitor is known to engage, and how consistent that pharmacophore is across the target's
-whole structural history — using [ProLIF](https://github.com/chemosim-lab/ProLIF) for
-interaction detection and [AutoDock Vina](https://github.com/ccsb-scripps/AutoDock-Vina) for
-docking.
+Docking gives you a pose and a score. `posegate` reports what the pose actually does: which
+interactions it forms, whether those include the residues known inhibitors engage, and how
+consistently that pharmacophore appears across the target's deposited structures. It uses
+[ProLIF](https://github.com/chemosim-lab/ProLIF) for interaction detection and
+[AutoDock Vina](https://github.com/ccsb-scripps/AutoDock-Vina) for docking.
 
 ## Contents
 
@@ -33,10 +32,10 @@ docking.
 - **Pose autopsy** (`posegate.autopsy`) — steric clashes, hydrogen-bond geometry, aromatic
   contacts, and a checkable pharmacophore constraint (a named conserved H-bond), combined into
   a fitted score for ranking candidates within a batch.
-- **Conserved-contact mining** (`posegate.conserved_contacts`) — given several real co-crystal
-  structures of one target, each bound to a different ligand, automatically surfaces which
-  receptor contacts recur across ligands. This is the data-driven equivalent of a hand-picked
-  literature pharmacophore, without requiring you to already know the literature.
+- **Conserved-contact mining** (`posegate.conserved_contacts`) — given several co-crystal
+  structures of one target, each bound to a different ligand, reports which receptor contacts
+  recur across ligands. This yields a pharmacophore constraint for targets where the literature
+  does not already provide one.
 - **Docking orchestration** (`posegate.docking`) — AutoDock Vina wrapper with ligand-size-aware
   search boxes and restraint-guided pose selection (pick the best-scoring pose among several
   that actually satisfies a required contact, not just the single top-ranked one).
@@ -97,10 +96,9 @@ python scripts/batch_dock.py \
 
 ## Validation
 
-Both components were checked against real, independently-verifiable ground truth, and
-cross-validated against [PLIP](https://doi.org/10.1093/nar/gkv315) — an established,
-independently-implemented interaction detector — on five protein families spanning unrelated
-folds and binding chemistries.
+Both components were checked against independently verifiable ground truth and cross-validated
+against [PLIP](https://doi.org/10.1093/nar/gkv315), a separately implemented interaction
+detector, on five protein families spanning unrelated folds and binding chemistries.
 
 | Family | Fold | Literature pharmacophore | Recovered by posegate | Agreed by PLIP |
 |---|---|---|:---:|:---:|
@@ -110,66 +108,63 @@ folds and binding chemistries.
 | HIV-1 protease | Homodimeric aspartic protease | Asp25/Asp25' catalytic dyad (both chains) | ✅ | ✅ |
 | Carbonic anhydrase | Zinc metalloenzyme | Thr199 gatekeeper H-bond | ✅ | ✅ |
 
-**The literature-validated pharmacophore residue was recovered, and agreed on by both tools, in
-all 5 families.** Aggregate agreement across all conserved residues (≥50% ensemble frequency) is
-recall 0.32 / precision 0.71 against PLIP's broader output; disagreement is concentrated in
-PLIP's longer tail of looser hydrophobic/water-bridge calls, not in the core pharmacophore
-signal. Two representative disagreements were diagnosed and traced to genuine geometric
-threshold effects and real per-structure biological asymmetry, not detection bugs — see
-[`paper.md`](paper.md) for the full breakdown and reproduction scripts
-(`scripts/plip_ensemble_miner.py`, `scripts/compare_miners.py`).
+The literature-validated pharmacophore residue was recovered, and agreed on by both tools, in all
+five families. Agreement across all conserved residues (≥50% ensemble frequency) is recall 0.32
+and precision 0.71 against PLIP's broader output, with disagreement concentrated in PLIP's longer
+tail of looser hydrophobic and water-bridge calls rather than in the pharmacophore residues. Two
+representative disagreements trace to a geometric threshold effect and to a per-structure
+biological asymmetry rather than to detection errors; see [`paper.md`](paper.md) for the full
+breakdown, and `scripts/plip_ensemble_miner.py` and `scripts/compare_miners.py` to reproduce it.
 
-**Screening/ranking performance** is a separate, weaker result, reported honestly rather than
-polished: on a 65-compound BRD4 benchmark (22 actives, 43 property-matched decoys), raw Vina
-score achieves AUC-ROC 0.53 (95% CI [0.37, 0.68]) — indistinguishable from random at this
-sample size. `posegate`'s fitted `posegate_score` (weights from L2-regularized logistic
-regression against this benchmark, not hand-picked — see `scripts/recalibrate_weights.py`)
-reaches a cross-validated AUC-ROC of 0.62 *on the target it was fit on*. Notably, generic H-bond
-count gets a *penalizing* weight in the fit — property-matched decoys form just as many
-incidental H-bonds as actives, so only the *specific* conserved contact actually discriminates.
+Screening and ranking performance is a weaker result. On a 65-compound BRD4 benchmark (22
+actives, 43 property-matched decoys), raw Vina score achieves AUC-ROC 0.53 (95% CI [0.37, 0.68]),
+indistinguishable from random at this sample size. `posegate`'s fitted `posegate_score`, whose
+weights come from L2-regularized logistic regression against this benchmark rather than from hand
+tuning (`scripts/recalibrate_weights.py`), reaches a cross-validated AUC-ROC of 0.62 on the
+target it was fitted on. Generic H-bond count receives a penalizing weight in that fit, because
+property-matched decoys form as many incidental H-bonds as actives, leaving the specific
+conserved contact as the discriminating feature.
 
-**Transferability was tested directly, and the fixed weights do not transfer.** Applying the
-same BRD4-fitted weights unmodified to an equivalent 51-compound CDK2 benchmark (CDK2's own
-Leu83 hinge contact substituted for BRD4's Asn140) gives AUC-ROC 0.35 — worse than raw Vina's
-already-weak 0.37 on that benchmark. The reason is diagnosed, not just observed: on CDK2, actives
-average *more* H-bonds than decoys (2.0 vs. 1.4) — the opposite pattern from BRD4 — so the
-BRD4-derived H-bond penalty punishes exactly the signal that's real on CDK2. The
-conserved-contact-hit and clash-count features keep the correct-direction relationship to
-activity on both targets; generic H-bond count does not. Practical upshot: whether a feature
-predicts activity is itself target-dependent, so per-target refitting (or restricting to
-mechanistically target-general features like the conserved-contact hit) is necessary, not
-optional. Full discussion in `paper.md`.
+Those fitted weights do not transfer to another target. Applying them unmodified to an equivalent
+51-compound CDK2 benchmark, with CDK2's Leu83 hinge contact substituted for BRD4's Asn140, gives
+AUC-ROC 0.35, below raw Vina's 0.37 on that benchmark. On CDK2, actives average more H-bonds than
+decoys (2.0 against 1.4), the opposite of the BRD4 pattern, so the BRD4-derived H-bond penalty
+acts against a signal that is genuine on CDK2. The conserved-contact-hit and clash-count features
+keep the same relationship to activity on both targets; generic H-bond count does not. Whether a
+feature predicts activity is therefore target-dependent, and weights should be refitted per
+target or restricted to mechanistically general features such as the conserved-contact hit. Full
+discussion in `paper.md`.
 
 ### Notes on receptor preparation
 
-RDKit's native PDB bond-perception is unreliable for full multi-residue proteins: with its
-default proximity-bonding heuristic it can invent spurious bonds on tight turns, and with that
-heuristic disabled its residue-template matcher can silently leave the vast majority of a chain
-completely unbonded. `posegate.receptor_prep` sidesteps both failure modes by building the
-receptor's RDKit `Mol` directly from PDBFixer/OpenMM's own `Topology.bonds()` — bonds OpenMM
-already computed correctly to run MD simulations — rather than re-guessing connectivity from
-written-out PDB text.
+RDKit's native PDB bond perception is unreliable for full multi-residue proteins. With its
+default proximity-bonding heuristic it can introduce spurious bonds at tight turns, and with that
+heuristic disabled its residue-template matcher can leave most of a chain unbonded without
+reporting an error. `posegate.receptor_prep` avoids both failure modes by building the receptor's
+RDKit `Mol` from PDBFixer/OpenMM's `Topology.bonds()`, which OpenMM computes in order to run MD
+simulations, rather than inferring connectivity from PDB text.
 
 ## Related work
 
-`posegate`'s scope is deliberately narrow relative to a few related tools:
+`posegate` occupies a narrow scope relative to a few related tools:
 
-- **[PoseBusters](https://github.com/maabuu/posebusters)** checks a pose's chemical/physical
+- **[PoseBusters](https://github.com/maabuu/posebusters)** checks a pose's chemical and physical
   plausibility (bond lengths, ring planarity, stereochemistry, clashes) but not target-specific
-  interaction recovery. Complementary, not overlapping: PoseBusters asks "is this pose chemically
-  valid?"; `posegate` asks "does this valid pose engage the right interactions for this target?"
-- **[Errington et al. 2024/2025](https://doi.org/10.1186/s13321-025-01011-6)** measures how well a
-  predicted pose reproduces a *known reference crystal pose*'s interactions (also via ProLIF).
-  That requires a ground-truth answer to compare against. `posegate` targets the opposite, more
-  common screening situation: triaging candidates for which no reference pose exists.
+  interaction recovery. The two are complementary: PoseBusters asks whether a pose is chemically
+  valid, `posegate` asks which interactions a valid pose forms with the target.
+- **[Errington et al. 2024/2025](https://doi.org/10.1186/s13321-025-01011-6)** measures how
+  closely a predicted pose reproduces the interactions of a known reference crystal pose, also
+  via ProLIF. That requires ground truth for comparison, whereas `posegate` addresses the more
+  common screening case in which no reference pose exists.
 - **[ParaDockS](https://github.com/cbaldauf/paradocks)** proposed essentially the same
   conserved-contact-mining idea over a decade ago, but its repository has had no commits since
-  2015 — it's not a maintained, installable package. `posegate` re-implements the idea on a
+  2015 and is not a maintained, installable package. `posegate` implements the idea on a
   currently maintained interaction-fingerprinting library (ProLIF).
 - **[visGReMLIN](https://doi.org/10.1186/s12859-020-3347-7)** is the closest direct comparator to
-  the conserved-contact miner — same input specification (an ensemble of one target's structures,
-  each with a different ligand), different method (graph-mining of conserved 3D motifs vs.
-  per-residue frequency aggregation over ProLIF fingerprints). It was released as a web server
+  the conserved-contact miner. It takes the same input (an ensemble of one target's structures,
+  each with a different ligand) but uses a different method: graph-mining of conserved 3D motifs
+  rather than per-residue frequency aggregation over ProLIF fingerprints. It was released as a
+  web server
   only, with no source code or package, and both advertised URLs are currently unreachable, so it
   cannot be run on new data. `scripts/compare_visgremlin.py` instead compares against its
   published result on its own CDK case study, which scores recovery of the Schonbrunn et al. CDK
@@ -213,15 +208,15 @@ written-out PDB text.
   ```
 
   Substitute `cdk2_manifest.json` (6 structures) or `cdk2_manifest19.json` for the other rows of
-  the table. Structure preparation is not bit-for-bit deterministic — hydrogen placement varies
-  slightly between runs — so individual `n_structures` counts can shift by one; the
+  the table. Structure preparation is not bit-for-bit reproducible, since hydrogen placement
+  varies slightly between runs, so individual `n_structures` counts can shift by one. The
   reference-residue scores above have been stable across reruns.
 - **[FTMap](https://ftmap.bu.edu/)** / **[Fragment Hotspot Maps](https://fragment-hotspot-maps.ccdc.cam.ac.uk/)**
-  identify druggable hot spots via, respectively, FFT-accelerated probe-docking simulation and a
-  statistical model built from the licensed Cambridge Structural Database — both substantially
-  heavier infrastructure aimed at finding hot spots on one structure. `posegate`'s miner instead
-  asks a lighter-weight question of structures that already exist in the public PDB: across
-  several different ligands already known to bind this target, which receptor contacts recur?
+  identify druggable hot spots using FFT-accelerated probe-docking simulation and a statistical
+  model built from the licensed Cambridge Structural Database respectively. Both need
+  substantially heavier infrastructure and locate hot spots on a single structure. `posegate`'s
+  miner works from structures already deposited in the public PDB and asks a narrower question:
+  across several ligands known to bind this target, which receptor contacts recur?
 
 ## Project structure
 
@@ -234,7 +229,7 @@ posegate/
 │   └── receptor_prep.py       # PDBFixer/OpenMM-based receptor preparation
 ├── scripts/                   # CLI entry points (see Quickstart)
 ├── tests/                     # unit tests
-├── data/                      # local data (gitignored)
+├── data/                      # ensemble manifests; fetched structures are gitignored
 ├── paper.md / paper.bib       # JOSS submission draft
 └── environment.yml            # conda environment spec
 ```
