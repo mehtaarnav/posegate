@@ -71,10 +71,34 @@ docking framework; its source is available but has had no commits since 2015 and
 maintained, installable package. visGReMLIN [@ribeiro2020visgremlin] is the closest direct
 comparator to the conserved-contact miner, taking the same input specification (an ensemble of
 one target's structures, each bound to a different ligand) but mining conserved 3D motifs via
-graph pattern mining rather than per-residue frequency aggregation over interaction fingerprints;
-we have validated `posegate`'s miner output against PLIP (see Summary and Research impact,
-below) but have not yet run a head-to-head comparison against visGReMLIN specifically, and a
-reviewer should weigh this tool's proximity accordingly when judging the miner's novelty. FTMap
+graph pattern mining rather than per-residue frequency aggregation over interaction fingerprints.
+visGReMLIN was released only as a web server, without source code or a distributable package, and
+both advertised URLs are currently unreachable (`vagner.dti.ufv.br/visgremlin4` refuses
+connections and `homepages.dcc.ufmg.br/~alexandrefassio/gremlin/` returns PHP errors), so we could
+not run it on our own ensembles. We instead compared against its published results on its own CDK
+case study (`scripts/compare_visgremlin.py`). That case study scores motif recovery against the
+experimentally determined CDK binding site of Schonbrunn et al., comprising 26 atoms across 9
+residues; visGReMLIN recovered 18 of the 26 atoms (69%), distributed over 8 of the 9 residues.
+Applied to a 22-structure CDK2 ensemble, `posegate`'s miner reports contacts at all 9 reference
+residues, including HIS84, which visGReMLIN's motifs did not recover. Counting only specific
+(non-van-der-Waals) interactions, it reports 7 of 9, omitting HIS84 and the hinge residue PHE82.
+PHE82 is a genuine limitation rather than a scoring artifact: visGReMLIN identified its aromatic
+contacts, whereas ProLIF registers the same contacts only as van der Waals proximity. The two
+scores are not directly comparable, since visGReMLIN's is an atom-level score over 73 complexes
+and `posegate` produces no atom-level output. We therefore claim only that the residue-level
+method recovers the same published binding site at lower computational cost, not that it resolves
+finer structure.
+
+Repeating the comparison over ensembles of 6, 19 and 22 structures exposes a limitation of
+frequency-based mining. Enlarging the ensemble from 6 to 19 structures degraded the result, with
+ASP145 disappearing from the output altogether. Fourteen of the added structures come from a
+single fragment-screen deposition series that occupies only the hinge subpocket, and restricting
+that series to its drug-like members did not restore ASP145, which indicates that chemotype
+homogeneity rather than ligand size is responsible. Residue coverage was comparatively stable
+across all three ensembles (8 to 9 of 9), but the frequencies assigned to peripheral residues were
+not. Those frequencies describe the chemistry of the ensemble rather than the pocket itself, so
+ensembles for this method should be curated for scaffold diversity rather than simply enlarged.
+FTMap
 [@kozakov2015ftmap] and Fragment Hotspot Maps [@radoux2016fragment] identify druggable "hot
 spots" on a protein surface via, respectively, FFT-accelerated small-molecule probe docking and a
 statistical model built from the Cambridge Structural Database — both substantially

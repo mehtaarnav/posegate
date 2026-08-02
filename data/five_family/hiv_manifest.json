@@ -1,0 +1,6 @@
+[
+  {"pdb_id": "1HVR", "pdb_path": "data/five_family/1HVR.pdb", "ligand_resname": "XK2"},
+  {"pdb_id": "1WBK", "pdb_path": "data/five_family/1WBK.pdb", "ligand_resname": "568"},
+  {"pdb_id": "1WBM", "pdb_path": "data/five_family/1WBM.pdb", "ligand_resname": "BLL"},
+  {"pdb_id": "6DGY", "pdb_path": "data/five_family/6DGY.pdb", "ligand_resname": "K13"}
+]

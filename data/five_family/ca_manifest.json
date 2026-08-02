@@ -1,0 +1,7 @@
+[
+  {"pdb_id": "3IEO", "pdb_path": "data/five_family/3IEO.pdb", "ligand_resname": "AMJ"},
+  {"pdb_id": "2HNC", "pdb_path": "data/five_family/2HNC.pdb", "ligand_resname": "1SA"},
+  {"pdb_id": "1ZGF", "pdb_path": "data/five_family/1ZGF.pdb", "ligand_resname": "TRU"},
+  {"pdb_id": "3M2Y", "pdb_path": "data/five_family/3M2Y.pdb", "ligand_resname": "BE0"},
+  {"pdb_id": "4LHI", "pdb_path": "data/five_family/4LHI.pdb", "ligand_resname": "WWL"}
+]

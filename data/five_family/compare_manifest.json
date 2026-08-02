@@ -1,0 +1,7 @@
+[
+  {"pdb_id": "3MXF_BRD4", "ligand_resname": "JQ1", "raw_pdb": "data/3mxf.pdb", "ligand_sdf": "data/ensemble/3MXF_ligand_h.sdf", "receptor_pkl": "data/ensemble/3MXF_receptor_h.pkl"},
+  {"pdb_id": "4FKL_CDK2", "ligand_resname": "CK2", "raw_pdb": "data/ensemble_cdk2/4FKL.pdb", "ligand_sdf": "data/ensemble_cdk2/4FKL_ligand_h.sdf", "receptor_pkl": "data/ensemble_cdk2/4FKL_receptor_h.pkl"},
+  {"pdb_id": "3ERT_ERalpha", "ligand_resname": "OHT", "raw_pdb": "data/five_family/3ERT.pdb", "ligand_sdf": "data/five_family/3ERT_ligand_h.sdf", "receptor_pkl": "data/five_family/3ERT_receptor_h.pkl"},
+  {"pdb_id": "1HVR_HIVprotease", "ligand_resname": "XK2", "raw_pdb": "data/five_family/1HVR.pdb", "ligand_sdf": "data/five_family/1HVR_ligand_h.sdf", "receptor_pkl": "data/five_family/1HVR_receptor_h.pkl"},
+  {"pdb_id": "3IEO_CarbonicAnhydrase", "ligand_resname": "AMJ", "raw_pdb": "data/five_family/3IEO.pdb", "ligand_sdf": "data/five_family/3IEO_ligand_h.sdf", "receptor_pkl": "data/five_family/3IEO_receptor_h.pkl"}
+]

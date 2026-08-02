@@ -1,0 +1,8 @@
+[
+  {"pdb_id": "3MXF", "pdb_path": "data/3mxf.pdb", "ligand_resname": "JQ1"},
+  {"pdb_id": "4QB3", "pdb_path": "data/ensemble/4QB3.pdb", "ligand_resname": "30M"},
+  {"pdb_id": "4ZC9", "pdb_path": "data/ensemble/4ZC9.pdb", "ligand_resname": "4MW"},
+  {"pdb_id": "6FO5", "pdb_path": "data/ensemble/6FO5.pdb", "ligand_resname": "DZH"},
+  {"pdb_id": "6I7Y", "pdb_path": "data/ensemble/6I7Y.pdb", "ligand_resname": "H7E"},
+  {"pdb_id": "7ZE6", "pdb_path": "data/ensemble/7ZE6.pdb", "ligand_resname": "1P8"}
+]

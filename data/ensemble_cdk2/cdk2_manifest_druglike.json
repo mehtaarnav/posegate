@@ -1,0 +1,57 @@
+[
+  {
+    "pdb_id": "1GZ8",
+    "pdb_path": "data/ensemble_cdk2/1GZ8.pdb",
+    "ligand_resname": "MBP"
+  },
+  {
+    "pdb_id": "2R3I",
+    "pdb_path": "data/ensemble_cdk2/2R3I.pdb",
+    "ligand_resname": "SCF"
+  },
+  {
+    "pdb_id": "4EK4",
+    "pdb_path": "data/ensemble_cdk2/4EK4.pdb",
+    "ligand_resname": "1CK"
+  },
+  {
+    "pdb_id": "4FKL",
+    "pdb_path": "data/ensemble_cdk2/4FKL.pdb",
+    "ligand_resname": "CK2"
+  },
+  {
+    "pdb_id": "6Q4D",
+    "pdb_path": "data/ensemble_cdk2/6Q4D.pdb",
+    "ligand_resname": "HHT"
+  },
+  {
+    "pdb_id": "6Q4E",
+    "pdb_path": "data/ensemble_cdk2/6Q4E.pdb",
+    "ligand_resname": "HH5"
+  },
+  {
+    "pdb_id": "6Q4G",
+    "pdb_path": "data/ensemble_cdk2/6Q4G.pdb",
+    "ligand_resname": "HJK"
+  },
+  {
+    "pdb_id": "6Q4H",
+    "pdb_path": "data/ensemble_cdk2/6Q4H.pdb",
+    "ligand_resname": "HGH"
+  },
+  {
+    "pdb_id": "6Q4I",
+    "pdb_path": "data/ensemble_cdk2/6Q4I.pdb",
+    "ligand_resname": "HGK"
+  },
+  {
+    "pdb_id": "6Q4J",
+    "pdb_path": "data/ensemble_cdk2/6Q4J.pdb",
+    "ligand_resname": "HHB"
+  },
+  {
+    "pdb_id": "6Q4K",
+    "pdb_path": "data/ensemble_cdk2/6Q4K.pdb",
+    "ligand_resname": "HHW"
+  }
+]

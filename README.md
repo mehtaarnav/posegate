@@ -169,8 +169,53 @@ written-out PDB text.
 - **[visGReMLIN](https://doi.org/10.1186/s12859-020-3347-7)** is the closest direct comparator to
   the conserved-contact miner — same input specification (an ensemble of one target's structures,
   each with a different ligand), different method (graph-mining of conserved 3D motifs vs.
-  per-residue frequency aggregation over ProLIF fingerprints). A head-to-head comparison against
-  it specifically is future work, not a claim made here.
+  per-residue frequency aggregation over ProLIF fingerprints). It was released as a web server
+  only, with no source code or package, and both advertised URLs are currently unreachable, so it
+  cannot be run on new data. `scripts/compare_visgremlin.py` instead compares against its
+  published result on its own CDK case study, which scores recovery of the Schonbrunn et al. CDK
+  binding site (26 atoms across 9 residues):
+
+  | | reference residues at the interface | of those, at freq ≥0.33 |
+  |---|---|---|
+  | visGReMLIN (73 complexes, atom-level motifs) | 8/9 — 18/26 atoms, 69% | n/a |
+  | `posegate`, 6-structure ensemble | 9/9 | 8/9 |
+  | `posegate`, 19-structure ensemble | 8/9 | 4/9 |
+  | `posegate`, 22-structure ensemble (union) | 9/9 | 4/9 |
+  | `posegate`, 22-structure, specific (non-VdW) contacts only | 7/9 | 1/9 |
+
+  The 9/9 indicates that the residue-level method recovers the same published binding site at
+  lower cost. It is not evidence of better resolution: visGReMLIN's score is atom-level over 73
+  complexes, and `posegate` produces no atom-level output to score on that denominator. PHE82 is
+  a real miss. visGReMLIN identified its aromatic contacts, while ProLIF registers them only as
+  van der Waals proximity.
+
+  Ensemble composition affects the result more than ensemble size does. Growing the ensemble from
+  6 to 19 structures degraded it: ASP145 dropped out of the output entirely, because 14 of the
+  added structures belong to one fragment-screen deposition series (6Q3B–6Q4K) that binds the
+  hinge without reaching the DFG region. Restricting that series to its drug-like members (≥10
+  heavy atoms) did not restore ASP145, so the cause is chemotype homogeneity rather than ligand
+  size. Which residues appear at all is reasonably stable (8 to 9 of 9 across ensembles), but the
+  frequencies are not; they describe how much of a given ensemble's chemistry touches each
+  residue, and only describe the pocket when the ensemble spans distinct chemical series. Curate
+  these ensembles for scaffold diversity rather than for size. Reproduce with:
+
+  ```bash
+  bash scripts/fetch_cdk2_candidates.sh
+  ```
+  ```bash
+  python scripts/prep_ensemble.py --manifest data/ensemble_cdk2/cdk2_manifest22.json --out_dir data/ensemble_cdk2 --out_manifest data/ensemble_cdk2/cdk2_prepped22.json
+  ```
+  ```bash
+  python scripts/run_conserved_contact_miner.py --manifest data/ensemble_cdk2/cdk2_prepped22.json --out_json data/ensemble_cdk2/cdk2_freq22.json
+  ```
+  ```bash
+  python scripts/compare_visgremlin.py --freq_json data/ensemble_cdk2/cdk2_freq22.json
+  ```
+
+  Substitute `cdk2_manifest.json` (6 structures) or `cdk2_manifest19.json` for the other rows of
+  the table. Structure preparation is not bit-for-bit deterministic — hydrogen placement varies
+  slightly between runs — so individual `n_structures` counts can shift by one; the
+  reference-residue scores above have been stable across reruns.
 - **[FTMap](https://ftmap.bu.edu/)** / **[Fragment Hotspot Maps](https://fragment-hotspot-maps.ccdc.cam.ac.uk/)**
   identify druggable hot spots via, respectively, FFT-accelerated probe-docking simulation and a
   statistical model built from the licensed Cambridge Structural Database — both substantially
