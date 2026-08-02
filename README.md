@@ -29,6 +29,7 @@ transfer between targets. See [Validation](#validation) for both results in full
 - [Installation](#installation)
 - [Quickstart](#quickstart)
 - [Validation](#validation)
+- [Design notes](#design-notes)
 - [Related work](#related-work)
 - [Project structure](#project-structure)
 - [Testing](#testing)
@@ -51,7 +52,7 @@ transfer between targets. See [Validation](#validation) for both results in full
   that actually satisfies a required contact, not just the single top-ranked one).
 - **Receptor preparation** (`posegate.receptor_prep`) — builds receptor bonds directly from
   PDBFixer/OpenMM's own `Topology`, rather than re-guessing them from PDB text (see
-  [Notes](#notes-on-receptor-preparation) below for why that matters).
+  [Design notes](#receptor-preparation) below for why that matters).
 
 ## Installation
 
@@ -126,10 +127,20 @@ five protein families spanning unrelated folds and binding chemistries.
 The literature-validated pharmacophore residue was recovered, and agreed on by both tools, in all
 five families. Agreement across all conserved residues (≥50% ensemble frequency) is recall 0.32
 and precision 0.71 against PLIP's broader output, with disagreement concentrated in PLIP's longer
-tail of looser hydrophobic and water-bridge calls rather than in the pharmacophore residues. Two
-representative disagreements trace to a geometric threshold effect and to a per-structure
-biological asymmetry rather than to detection errors; see [`paper.md`](paper.md) for the full
-breakdown, and `scripts/plip_ensemble_miner.py` and `scripts/compare_miners.py` to reproduce it.
+tail of looser hydrophobic and water-bridge calls rather than in the pharmacophore residues.
+Reproduce with `scripts/plip_ensemble_miner.py` and `scripts/compare_miners.py`.
+
+We traced two representative disagreements to their causes, and neither is a detection error:
+
+- **A CDK2 lysine contact that `posegate` reports and PLIP does not.** The donor-H···acceptor
+  angle is 126.8°, just below ProLIF's default 130–180° acceptance window, on an otherwise
+  genuine close contact. The two tools draw the hydrogen-bond angle cutoff in slightly different
+  places, and this contact falls between them.
+- **An apparent chain asymmetry in the HIV-1 protease catalytic aspartates.** Asp25 and Asp25'
+  are not detected symmetrically in every structure. This reflects a real per-structure asymmetry
+  in the deposited coordinates rather than a bug: pseudo-symmetric inhibitors are known to bind
+  this homodimer with one aspartate engaged more closely than the other. Aggregated across the
+  ensemble, the miner recovers the dyad from both chains.
 
 ### Pose-ranking score (two targets, exploratory)
 
@@ -162,7 +173,22 @@ generalizes. Extending this to the remaining three families is the natural next 
 takes any results CSV, and the miner has already supplied validated pharmacophores for all five.
 Full discussion in `paper.md`.
 
-## Notes on receptor preparation
+## Design notes
+
+### Docking and ranking
+
+- **Ligand-size-aware search box.** The box is sized to each ligand's own conformer extent plus a
+  fixed margin. A box substantially smaller than the ligand produces severe clashes, so a single
+  fixed box size across a chemically diverse library is unsafe.
+- **Restraint-guided pose selection.** Vina's scoring function has no restraint term, so it
+  cannot be told to prefer poses making a particular contact. Rather than accepting Vina's single
+  top-ranked pose, `posegate` requests several candidates and selects the best-scoring one that
+  satisfies the required contact, falling back to the top-ranked pose when none does.
+- **Percentile ranking within a batch.** A fixed absolute score threshold is only meaningful
+  relative to the score distribution a given receptor and setup actually produces, so batch
+  screening ranks candidates by percentile within the screened set instead.
+
+### Receptor preparation
 
 RDKit's native PDB bond perception is unreliable for full multi-residue proteins. With its
 default proximity-bonding heuristic it can introduce spurious bonds at tight turns, and with that
