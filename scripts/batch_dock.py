@@ -7,7 +7,9 @@ from rdkit import Chem
 from rdkit.Chem import AllChem
 from posegate.docking import prepare_receptor, dock_ligand
 from posegate.autopsy import generate_autopsy_report, find_conserved_hbond, rank_batch
-from posegate.receptor_prep import prepare_receptor_pickle, load_receptor_mol
+from posegate.receptor_prep import (
+    prepare_receptor_pickle, load_receptor_mol, write_clean_receptor_pdb
+)
 
 def prepare_ligand_sdf(smiles: str, out_path: str):
     mol = Chem.MolFromSmiles(smiles)
@@ -94,6 +96,9 @@ def main():
     # of the native ligand).
     receptor_h_pdb = args.receptor_pdb.replace('.pdb', '_h.pdb')
     receptor_pdbqt = args.receptor_pdb.replace('.pdb', '.pdbqt')
+    if not os.path.exists(receptor_h_pdb):
+        print(f"Preparing heterogen-free hydrogenated receptor: {receptor_h_pdb}")
+        write_clean_receptor_pdb(args.receptor_pdb, receptor_h_pdb)
     prepare_receptor(receptor_h_pdb, receptor_pdbqt)
 
     # Prepared once via posegate.receptor_prep (bonds taken directly from

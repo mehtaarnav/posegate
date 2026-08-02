@@ -73,6 +73,32 @@ def prepare_receptor_mol(pdb_path: str) -> Chem.Mol:
     return final
 
 
+def write_clean_receptor_pdb(pdb_path: str, out_path: str) -> str:
+    """Writes a heterogen-free, hydrogenated receptor PDB.
+
+    Docking must not see the co-crystallized ligand: the raw crystal file
+    still contains it, and docking into that structure silently blocks the
+    real binding site with a copy of the native ligand. Producing this file
+    used to be a manual step, done once for BRD4 and never scripted, which
+    left every new target unable to run batch_dock.py at all.
+
+    Unlike prepare_receptor_pickle, the output here is PDB text and so does
+    lose the computed bonds. That is fine for its two consumers: OpenBabel
+    only needs atoms and elements to write a PDBQT for Vina, and PDBFixer
+    recomputes its own Topology when this file is read back for the
+    pickle. Anything needing correct bonds should use the pickle.
+    """
+    fixer = PDBFixer(filename=pdb_path)
+    fixer.removeHeterogens(keepWater=False)
+    fixer.findMissingResidues()
+    fixer.findMissingAtoms()
+    fixer.addMissingAtoms()
+    fixer.addMissingHydrogens(7.0)
+    with open(out_path, 'w') as f:
+        PDBFile.writeFile(fixer.topology, fixer.positions, f, keepIds=True)
+    return out_path
+
+
 def prepare_receptor_pickle(pdb_path: str, out_path: str) -> str:
     """Prepares a receptor and pickles the resulting RDKit Mol. Pickling
     (rather than writing PDB/SDF text) is the only lossless round trip:
