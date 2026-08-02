@@ -7,6 +7,8 @@ were calibrated only on BRD4; this builds equivalent benchmarks for other
 targets to test whether those weights generalize)."""
 
 import argparse
+import os
+
 import requests
 import pandas as pd
 from rdkit import Chem, DataStructs
@@ -166,6 +168,10 @@ def main():
                         help="Decoy candidate pool size. Larger pools give better property "
                              "matching for targets whose actives are unusual; check the result "
                              "with scripts/check_decoy_quality.py")
+    parser.add_argument("--pool_cache", default=None,
+                        help="File to cache the decoy candidate pool in (one SMILES per line). "
+                             "Reused across targets so every benchmark draws decoys from the "
+                             "same pool.")
     parser.add_argument("--out_csv", required=True)
     args = parser.parse_args()
 
@@ -173,8 +179,28 @@ def main():
     actives = fetch_chembl_actives(args.target_chembl_id, limit=args.limit)
     print(f"Found {len(actives)} actives.")
 
-    print("Fetching decoy candidate pool from ChEMBL...")
-    pool = fetch_candidate_pool(pool_size=args.pool_size)
+    # The decoy pool is target-agnostic, so cache it: building benchmarks
+    # for several targets should not re-download the same molecules each
+    # time, and reusing one pool also keeps the decoy sets comparable
+    # across targets, which matters when the fitted weights are then
+    # compared between them.
+    pool = []
+    if args.pool_cache and os.path.exists(args.pool_cache):
+        with open(args.pool_cache) as f:
+            pool = [line.strip() for line in f if line.strip()]
+        print(f"Loaded {len(pool)} pool candidates from {args.pool_cache}")
+
+    # Only refetch on a cache miss. Comparing against pool_size would
+    # refetch every time, since the API returns fewer usable molecules
+    # than requested (records without structures are dropped), so a cache
+    # of 19878 would never satisfy a request for 20000.
+    if not pool:
+        print("Fetching decoy candidate pool from ChEMBL...")
+        pool = fetch_candidate_pool(pool_size=args.pool_size)
+        if args.pool_cache:
+            with open(args.pool_cache, 'w') as f:
+                f.write('\n'.join(pool))
+            print(f"Cached pool to {args.pool_cache}")
     print(f"Pool size: {len(pool)}")
 
     print("Property-matching decoys (MW/logP/rotatable bonds/donors/acceptors matched, "
