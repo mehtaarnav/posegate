@@ -1,5 +1,5 @@
 ---
-title: 'posegate: ProLIF-based pose triage and PDB-ensemble conserved-contact mining for structure-based virtual screening'
+title: 'posegate: mining conserved protein-ligand contacts from PDB ensembles, with interaction-aware pose triage'
 tags:
   - Python
   - cheminformatics
@@ -19,35 +19,49 @@ bibliography: paper.bib
 
 # Summary
 
-`posegate` is a Python toolkit for two related tasks in structure-based drug discovery: judging
-whether a docked protein-ligand pose is trustworthy, and identifying which receptor contacts a
-target's known binders consistently engage. Docking programs such as AutoDock Vina
-[@eberhardt2021autodockvina] return a pose and a numeric score, but that score gives little
-indication of which structural features produced it. `posegate` wraps Vina with interaction
-fingerprinting from [ProLIF](https://github.com/chemosim-lab/ProLIF) [@bouysset2021prolif] to
-produce a per-pose report covering steric clashes, hydrogen bonds, aromatic contacts and a named
-pharmacophore constraint, and combines these into a score whose weights are fitted against
-labeled data rather than chosen by hand. Its conserved-contact miner takes an ensemble of a
-target's co-crystal structures, each bound to a chemically distinct ligand, and reports which
-receptor contacts recur across them, which provides a pharmacophore constraint for targets where
-one has not already been established in the literature. Both components were evaluated against
-independently verifiable ground truth across five protein families with unrelated folds, and
-cross-checked against PLIP [@salentin2015plip], a separately implemented interaction detector.
+`posegate` is a Python toolkit whose primary component is a conserved-contact miner for
+structure-based drug discovery. Given an ensemble of one target's co-crystal structures, each
+bound to a chemically distinct ligand, it aggregates interaction fingerprints from
+[ProLIF](https://github.com/chemosim-lab/ProLIF) [@bouysset2021prolif] and reports which receptor
+contacts recur across the ensemble and at what frequency. This yields a target-specific
+pharmacophore constraint for targets where the literature does not already supply one. The miner
+was evaluated across five protein families with unrelated folds, cross-checked against PLIP
+[@salentin2015plip], a separately implemented interaction detector, and compared against the
+published results of visGReMLIN [@ribeiro2020visgremlin], the closest existing tool.
+
+A second component applies the mined constraint downstream, to demonstrate that the constraint is
+usable in practice and to characterize how far interaction-based pose features generalize. It
+wraps AutoDock Vina [@eberhardt2021autodockvina] and reports, per pose, the steric clashes,
+hydrogen bonds and aromatic contacts detected, together with whether the pose satisfies the named
+conserved contact, combining these into a score whose weights are fitted against labeled data.
+Its ranking performance is modest and does not transfer between targets; we report it, and the
+feature-level analysis explaining it, as a characterization of the approach's limits rather than
+as a validated screening method.
 
 # Statement of need
 
-Raw docking score is a weak discriminator in practice. On this project's 65-compound BRD4
-benchmark (22 literature actives, 43 DUD-E-style property-matched decoys), raw Vina score
-separates actives from decoys with an AUC-ROC of 0.53 (95% stratified-bootstrap CI [0.37, 0.68]),
-which is not distinguishable from random at this sample size. Improving on it requires software
-that reports the interactions underlying a pose rather than the score alone. Interaction-aware
-triage of this kind in turn needs a target-specific pharmacophore to check against, and such a
-pharmacophore is typically either taken from the literature, as we initially did for BRD4's
-Asn140 contact, or unavailable for a less studied target. `posegate` addresses both requirements:
-its autopsy module produces fitted, interaction-aware pose scores, and its conserved-contact
-miner derives the pharmacophore constraint from existing PDB structures. It is intended for
-researchers running structure-based virtual screens who need more than a docking score to rank
-candidates, and for those working on targets with no established literature pharmacophore.
+Interaction-aware analysis of docked poses requires a target-specific pharmacophore to check
+against: a named receptor contact that genuine binders are expected to make. For well-studied
+targets this is taken from the literature, as we initially did for BRD4's Asn140 contact. For a
+less-studied target it is often unavailable, and identifying one by reading the structural
+literature is precisely the expertise a researcher new to that target lacks. Many such targets
+nonetheless have several ligand-bound structures already deposited in the PDB, which collectively
+contain the answer. `posegate`'s miner extracts it: it reports which receptor contacts recur
+across a target's own deposited complexes, requiring no prior knowledge of that target beyond a
+list of its PDB entries and their bound ligands.
+
+The downstream motivation is that raw docking score is a weak discriminator. On this project's
+65-compound BRD4 benchmark (22 literature actives, 43 DUD-E-style property-matched decoys), raw
+Vina score separates actives from decoys with an AUC-ROC of 0.53 (95% stratified-bootstrap CI
+[0.37, 0.68]), not distinguishable from random at this sample size. Checking whether a pose makes
+a specific, mechanistically meaningful contact is a more direct question than asking whether its
+score is favourable, and `posegate`'s pose-triage component implements that check against the
+mined constraint. Its measured ranking performance is modest, and is reported in full below.
+
+The intended audience is researchers working on a target with no established literature
+pharmacophore who want one derived from that target's own structural history, and researchers
+running structure-based virtual screens who want per-pose interaction detail behind a docking
+score.
 
 # State of the field
 
@@ -144,9 +158,12 @@ hydrogen-bond donor-H...acceptor angle of 126.8 degrees, just outside ProLIF's d
 degree cutoff on an otherwise genuine close contact. An apparent chain asymmetry in the HIV-1
 protease catalytic aspartates reflects a per-structure asymmetry in the underlying data, which is
 consistent with known pseudo-symmetric-inhibitor binding behavior rather than a detection
-artifact. The pose-ranking component is weaker: its fitted score reaches a cross-validated AUC-ROC
-of 0.62 against a raw-Vina baseline of 0.53 on the 65-compound BRD4 benchmark it was fitted on, a
-modest improvement.
+artifact.
+
+The pose-triage component is evaluated separately and more narrowly, on two targets rather than
+five, and we present it as a characterization of the approach's limits rather than as a validated
+screening method. Its fitted score reaches a cross-validated AUC-ROC of 0.62 against a raw-Vina
+baseline of 0.53 on the 65-compound BRD4 benchmark it was fitted on, a modest improvement.
 
 We then tested whether the BRD4-fitted weights transfer to a second target, constructing an
 equivalent 51-compound CDK2 benchmark (17 ChEMBL actives, 34 property-matched decoys) and
@@ -165,6 +182,17 @@ predicts activity is thus itself target-dependent, and weights fitted on one tar
 output should not be assumed to transfer. Feature weights need to be refitted per target, or
 restricted to features such as the conserved-contact hit whose relationship to activity is
 mechanistically general rather than empirically fitted.
+
+Two targets are not enough to establish which feature types are target-general, and we do not
+claim more than the two observations support. What the comparison does show is a difference in
+kind between features: the mined conserved contact and the clash count keep their direction on
+both targets, while the generic hydrogen-bond count reverses. That the mined constraint is the
+feature that holds is consistent with the miner, rather than the fitted score, being the
+component of `posegate` that generalizes. Establishing this properly requires equivalent
+benchmarks on the remaining three families, for which the miner has already supplied validated
+pharmacophores and for which the benchmark-construction and refitting scripts are already
+target-parameterized; we regard that as the natural next step rather than as a result claimed
+here.
 
 # Acknowledgements
 

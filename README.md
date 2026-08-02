@@ -2,18 +2,26 @@
 
 # posegate
 
-**Interaction-aware triage for docked protein-ligand poses, and automated conserved-contact mining across PDB ensembles.**
+**Mine the conserved contacts of a target from its own PDB structures, then check docked poses against them.**
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Python 3.10](https://img.shields.io/badge/python-3.10-blue.svg)](environment.yml)
 
 </div>
 
-Docking gives you a pose and a score. `posegate` reports what the pose actually does: which
-interactions it forms, whether those include the residues known inhibitors engage, and how
-consistently that pharmacophore appears across the target's deposited structures. It uses
-[ProLIF](https://github.com/chemosim-lab/ProLIF) for interaction detection and
-[AutoDock Vina](https://github.com/ccsb-scripps/AutoDock-Vina) for docking.
+Interaction-aware pose analysis needs a target-specific pharmacophore to check against, and for a
+less-studied target no one has written that pharmacophore down. `posegate`'s main component
+derives it from the target's own co-crystal structures: point it at several PDB entries for one
+target, each with a different bound ligand, and it reports which receptor contacts recur and how
+often. A second component applies that constraint to docked poses, reporting the interactions
+each pose forms and whether it satisfies the mined contact. Interaction detection uses
+[ProLIF](https://github.com/chemosim-lab/ProLIF); docking uses
+[AutoDock Vina](https://github.com/ccsb-scripps/AutoDock-Vina).
+
+The miner is the validated part of this tool (five protein families, cross-checked against PLIP
+and against visGReMLIN's published benchmark). The pose-ranking score is exploratory: it is a
+modest improvement on raw docking score for the target it was fitted on, and its weights do not
+transfer between targets. See [Validation](#validation) for both results in full.
 
 ## Contents
 
@@ -29,13 +37,15 @@ consistently that pharmacophore appears across the target's deposited structures
 
 ## Features
 
+- **Conserved-contact mining** (`posegate.conserved_contacts`) — the main component. Given several
+  co-crystal structures of one target, each bound to a different ligand, reports which receptor
+  contacts recur across ligands and at what frequency. This yields a pharmacophore constraint for
+  targets where the literature does not already provide one.
 - **Pose autopsy** (`posegate.autopsy`) — steric clashes, hydrogen-bond geometry, aromatic
-  contacts, and a checkable pharmacophore constraint (a named conserved H-bond), combined into
-  a fitted score for ranking candidates within a batch.
-- **Conserved-contact mining** (`posegate.conserved_contacts`) — given several co-crystal
-  structures of one target, each bound to a different ligand, reports which receptor contacts
-  recur across ligands. This yields a pharmacophore constraint for targets where the literature
-  does not already provide one.
+  contacts, and a checkable pharmacophore constraint (a named conserved H-bond, typically the one
+  the miner found), combined into a fitted score for ranking candidates within a batch. The
+  per-pose interaction report is reliable; the fitted ranking score is exploratory (see
+  [Validation](#validation)).
 - **Docking orchestration** (`posegate.docking`) — AutoDock Vina wrapper with ligand-size-aware
   search boxes and restraint-guided pose selection (pick the best-scoring pose among several
   that actually satisfies a required contact, not just the single top-ranked one).
@@ -52,6 +62,21 @@ pip install -e .
 ```
 
 ## Quickstart
+
+### Mine conserved contacts across a PDB ensemble
+
+Start here: the residue this reports is the pharmacophore constraint the other steps check
+against.
+
+```bash
+# 1. Prepare each structure (ligand SDF + receptor pickle) from a manifest of
+#    {pdb_id, pdb_path, ligand_resname} entries:
+python scripts/prep_ensemble.py \
+    --manifest my_targets.json --out_dir data/my_target --out_manifest data/my_target/prepped.json
+
+# 2. Mine which receptor contacts are conserved across the ensemble:
+python scripts/run_conserved_contact_miner.py --manifest data/my_target/prepped.json
+```
 
 ### Autopsy a single docked pose
 
@@ -74,18 +99,6 @@ Or from the command line:
 python scripts/run_autopsy.py --receptor receptor_h.pdb --ligand ligand_docked.sdf --score -8.4
 ```
 
-### Mine conserved contacts across a PDB ensemble
-
-```bash
-# 1. Prepare each structure (ligand SDF + receptor pickle) from a manifest of
-#    {pdb_id, pdb_path, ligand_resname} entries:
-python scripts/prep_ensemble.py \
-    --manifest my_targets.json --out_dir data/my_target --out_manifest data/my_target/prepped.json
-
-# 2. Mine which receptor contacts are conserved across the ensemble:
-python scripts/run_conserved_contact_miner.py --manifest data/my_target/prepped.json
-```
-
 ### Batch dock and triage a compound library
 
 ```bash
@@ -96,9 +109,11 @@ python scripts/batch_dock.py \
 
 ## Validation
 
-Both components were checked against independently verifiable ground truth and cross-validated
-against [PLIP](https://doi.org/10.1093/nar/gkv315), a separately implemented interaction
-detector, on five protein families spanning unrelated folds and binding chemistries.
+### Conserved-contact miner (five targets)
+
+The miner was checked against independently verifiable ground truth and cross-validated against
+[PLIP](https://doi.org/10.1093/nar/gkv315), a separately implemented interaction detector, on
+five protein families spanning unrelated folds and binding chemistries.
 
 | Family | Fold | Literature pharmacophore | Recovered by posegate | Agreed by PLIP |
 |---|---|---|:---:|:---:|
@@ -116,7 +131,12 @@ representative disagreements trace to a geometric threshold effect and to a per-
 biological asymmetry rather than to detection errors; see [`paper.md`](paper.md) for the full
 breakdown, and `scripts/plip_ensemble_miner.py` and `scripts/compare_miners.py` to reproduce it.
 
-Screening and ranking performance is a weaker result. On a 65-compound BRD4 benchmark (22
+### Pose-ranking score (two targets, exploratory)
+
+This component is evaluated on two targets rather than five, and is reported as a
+characterization of the approach's limits rather than as a validated screening method.
+
+On a 65-compound BRD4 benchmark (22
 actives, 43 property-matched decoys), raw Vina score achieves AUC-ROC 0.53 (95% CI [0.37, 0.68]),
 indistinguishable from random at this sample size. `posegate`'s fitted `posegate_score`, whose
 weights come from L2-regularized logistic regression against this benchmark rather than from hand
@@ -132,10 +152,17 @@ decoys (2.0 against 1.4), the opposite of the BRD4 pattern, so the BRD4-derived 
 acts against a signal that is genuine on CDK2. The conserved-contact-hit and clash-count features
 keep the same relationship to activity on both targets; generic H-bond count does not. Whether a
 feature predicts activity is therefore target-dependent, and weights should be refitted per
-target or restricted to mechanistically general features such as the conserved-contact hit. Full
-discussion in `paper.md`.
+target or restricted to mechanistically general features such as the conserved-contact hit.
 
-### Notes on receptor preparation
+Two targets cannot establish which feature types are target-general, and we don't claim more than
+that. The suggestive part is that the mined conserved contact is among the features that hold
+their direction on both targets, which is consistent with the miner being the component that
+generalizes. Extending this to the remaining three families is the natural next step:
+`scripts/fetch_benchmark_dataset.py` already takes any ChEMBL target ID, the refitting script
+takes any results CSV, and the miner has already supplied validated pharmacophores for all five.
+Full discussion in `paper.md`.
+
+## Notes on receptor preparation
 
 RDKit's native PDB bond perception is unreliable for full multi-residue proteins. With its
 default proximity-bonding heuristic it can introduce spurious bonds at tight turns, and with that
