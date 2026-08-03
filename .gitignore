@@ -95,3 +95,10 @@ results/
 plip_out/
 results*.csv
 failures.csv
+
+# Session handoff/status notes are working documents, not repo content.
+# They carry local paths, usernames and in-progress caveats that should
+# not be published. Keep them outside the repo.
+HANDOFF*.md
+*_handoff*.md
+SESSION_NOTES*.md
