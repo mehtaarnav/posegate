@@ -1,5 +1,6 @@
 # posegate/scripts/batch_dock.py
 import argparse
+import json
 import os
 import subprocess
 from concurrent.futures import ProcessPoolExecutor, as_completed
@@ -148,6 +149,9 @@ def main():
                         help="Conserved-contact residue(s), e.g. ASN:140:A for BRD4, or "
                              "GLU:353:A ARG:394:A for estrogen receptor alpha's charge clamp. "
                              "Supply the residue(s) the miner reported for your target.")
+    parser.add_argument("--checkpoint", default="results_checkpoint.jsonl",
+                        help="JSONL file of completed ligands. Reused to resume an "
+                             "interrupted run; delete it to force a clean rerun.")
     parser.add_argument("--workers", type=int, default=max(1, (os.cpu_count() or 2) // 2),
                         help="Ligands to dock concurrently. Vina is pinned to one thread per "
                              "worker, so this trades Vina's internal threading for across-ligand "
@@ -198,15 +202,32 @@ def main():
     }
     tasks = [(row['name'], row['smiles']) for _, row in df.iterrows()]
     total = len(tasks)
-    print(f"Docking {total} ligands across {args.workers} worker(s)...")
 
-    def checkpoint():
-        # Checkpoint raw (pre-ranking) progress so a later crash doesn't
-        # lose everything; final decisions still require the full batch.
-        pd.DataFrame([
-            {'name': r['name'], 'vina_score': r['vina_score'], 'posegate_score': r['posegate_score']}
-            for r in reports
-        ]).to_csv("results_raw_checkpoint.csv", index=False)
+    # Resume support. Each finished ligand's full report is appended to a
+    # JSONL checkpoint as it completes, so an interrupted run resumes
+    # instead of starting over. Whole runs were lost repeatedly to
+    # environment teardown because results.csv is only written at the end,
+    # and a 3-column CSV checkpoint could not be resumed from: rank_batch
+    # needs each report's clash list, not just its score.
+    done = {}
+    if os.path.exists(args.checkpoint):
+        with open(args.checkpoint) as f:
+            for line in f:
+                line = line.strip()
+                if line:
+                    r = json.loads(line)
+                    done[r['name']] = r
+        reports.extend(done.values())
+        tasks = [t for t in tasks if t[0] not in done]
+        print(f"Resuming from {args.checkpoint}: {len(done)} done, {len(tasks)} remaining")
+
+    print(f"Docking {len(tasks)} of {total} ligands across {args.workers} worker(s)...")
+    ckpt = open(args.checkpoint, 'a')
+
+    def checkpoint(report):
+        ckpt.write(json.dumps(report) + "\n")
+        ckpt.flush()
+        os.fsync(ckpt.fileno())
 
     if args.workers > 1:
         with ProcessPoolExecutor(max_workers=args.workers,
@@ -216,22 +237,23 @@ def main():
                 status, payload = fut.result()
                 if status == 'ok':
                     reports.append(payload)
+                    checkpoint(payload)
                 else:
                     print(f"  FAILED: {payload['name']} ({payload['error']})")
                     failures.append(payload)
-                print(f"[{i}/{total}] {futures[fut]}", flush=True)
-                checkpoint()
+                print(f"[{i}/{len(tasks)}] {futures[fut]}", flush=True)
     else:
         _init_worker(ctx)
         for i, t in enumerate(tasks, 1):
             status, payload = _process_ligand(t)
             if status == 'ok':
                 reports.append(payload)
+                checkpoint(payload)
             else:
                 print(f"  FAILED: {payload['name']} ({payload['error']})")
                 failures.append(payload)
-            print(f"[{i}/{total}] {t[0]}", flush=True)
-            checkpoint()
+            print(f"[{i}/{len(tasks)}] {t[0]}", flush=True)
+    ckpt.close()
 
     # Restore input order, so a run's output does not depend on the order
     # in which workers happened to finish.
