@@ -74,12 +74,13 @@ aggregation. It was released only as a web server, without source code, and both
 are currently unreachable, so we compared against its published CDK case study instead
 (`scripts/compare_visgremlin.py`). Of the 26 binding-site atoms of Schonbrunn et al., spanning 9
 residues, visGReMLIN recovered 18 atoms across 8 residues; on a 22-structure CDK2 ensemble
-`posegate`'s miner reports contacts at all 9 residues, or 7 of 9 counting only
-non-van-der-Waals interactions. The scores are not directly comparable, since visGReMLIN's is
-atom-level over 73 complexes. The comparison also showed that ensemble composition matters more
-than size: adding 14 structures from one fragment-screen series removed ASP145 from the output
-entirely. The README reports both results in full, including the hinge residue PHE82, which
-visGReMLIN recovers and the miner misses.
+`posegate`'s miner reports contacts at all 9 residues, or 8 of 9 counting only
+non-van-der-Waals interactions, missing the same residue visGReMLIN missed, HIS84. The hinge
+residue PHE82, which visGReMLIN recovers through an aromatic motif, is recovered here as a
+hydrophobic contact rather than as pi-stacking. The scores are not directly comparable, since
+visGReMLIN's is atom-level over 73 complexes. The comparison also showed that ensemble
+composition matters more than size: adding 14 structures from one fragment-screen series removed
+ASP145 from the output entirely. The README reports both results in full.
 
 # Software design
 

@@ -229,13 +229,14 @@ simulations, rather than inferring connectivity from PDB text.
   | `posegate`, 6-structure ensemble | 9/9 | 8/9 |
   | `posegate`, 19-structure ensemble | 8/9 | 4/9 |
   | `posegate`, 22-structure ensemble (union) | 9/9 | 4/9 |
-  | `posegate`, 22-structure, specific (non-VdW) contacts only | 7/9 | 1/9 |
+  | `posegate`, 22-structure, specific (non-VdW) contacts only | 8/9 | 1/9 |
 
   The 9/9 indicates that the residue-level method recovers the same published binding site at
   lower cost. It is not evidence of better resolution: visGReMLIN's score is atom-level over 73
-  complexes, and `posegate` produces no atom-level output to score on that denominator. PHE82 is
-  a real miss. visGReMLIN identified its aromatic contacts, while ProLIF registers them only as
-  van der Waals proximity.
+  complexes, and `posegate` produces no atom-level output to score on that denominator. On
+  specific interactions both methods reach 8/9 and both miss the same residue, HIS84, which
+  `posegate` recovers only as van der Waals proximity. PHE82, which visGReMLIN recovers through
+  an aromatic motif, is recovered here as a hydrophobic contact rather than as pi-stacking.
 
   Ensemble composition affects the result more than ensemble size does. Growing the ensemble from
   6 to 19 structures degraded it: ASP145 dropped out of the output entirely, because 14 of the

@@ -262,7 +262,14 @@ def generate_autopsy_report(
     # at all. scripts/fetch_benchmark_dataset.py now also matches donor
     # and acceptor counts, so these weights should be refitted from a
     # benchmark rebuilt with that script before they are relied on.
-    # aromatic_count was regularized to exactly zero (not useful here).
+    #
+    # aromatic_count was regularized to exactly zero in every fit, which
+    # was previously read as the feature not being useful. It was in fact
+    # never measured: prepared receptors had no aromatic rings at all
+    # until posegate.receptor_prep began assigning side-chain aromaticity,
+    # so ProLIF could not report pi-stacking and the count was constant at
+    # zero. Nothing is known about whether this feature helps; it needs a
+    # refit against receptors prepared by the current code.
     posegate_score = report['vina_score']
     posegate_score += 2.706 * len(report['hbonds'])
     posegate_score += 0.813 * len(report['clashes'])
