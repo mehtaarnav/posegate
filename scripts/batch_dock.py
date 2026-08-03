@@ -257,7 +257,10 @@ def main():
 
     # Restore input order, so a run's output does not depend on the order
     # in which workers happened to finish.
-    order = {name: i for i, (name, _) in enumerate(tasks)}
+    # Built from the full ligand list, not `tasks`: on a resumed run `tasks`
+    # holds only what still needed docking, so reports restored from the
+    # checkpoint would not be found here.
+    order = {row['name']: i for i, (_, row) in enumerate(df.iterrows())}
     reports.sort(key=lambda r: order[r['name']])
 
     # Absolute per-molecule thresholds only make sense relative to whatever
