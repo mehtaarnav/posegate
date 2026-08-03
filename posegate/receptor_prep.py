@@ -27,6 +27,40 @@ from rdkit import Chem
 from rdkit.Geometry import Point3D
 
 
+# Catalytic metal ions are part of the binding site, not solvent. PDBFixer's
+# removeHeterogens deletes every non-standard residue including these, which
+# for a metalloenzyme removes the thing the ligand actually binds: carbonic
+# anhydrase inhibitors coordinate the active-site Zn at about 2 A, so docking
+# into a zinc-stripped receptor is not an approximation but a different
+# problem. Alkali ions are excluded: Na and K in a crystal are almost always
+# buffer, not catalytic.
+METAL_IONS = {'ZN', 'MG', 'MN', 'FE', 'FE2', 'CU', 'CU1', 'CO', 'NI', 'CD', 'CA'}
+
+
+def extract_metal_ions(pdb_path: str):
+    """Reads catalytic metal ions out of a PDB, before PDBFixer discards them.
+
+    Returns a list of (resname, resnum, chain, element, (x, y, z)).
+    """
+    ions = []
+    with open(pdb_path) as f:
+        for line in f:
+            if not line.startswith('HETATM'):
+                continue
+            resname = line[17:20].strip()
+            if resname not in METAL_IONS:
+                continue
+            element = line[76:78].strip() or resname
+            ions.append((
+                resname,
+                int(line[22:26]),
+                line[21],
+                element.capitalize(),
+                (float(line[30:38]), float(line[38:46]), float(line[46:54])),
+            ))
+    return ions
+
+
 # Ring atoms of the aromatic side chains, by PDB atom name, in ring
 # connectivity order. Tryptophan contributes two fused rings and appears
 # twice; the shared CD2-CE2 bond is set aromatic by whichever comes first.
@@ -89,6 +123,12 @@ def assign_sidechain_aromaticity(mol: Chem.RWMol) -> int:
 def prepare_receptor_mol(pdb_path: str) -> Chem.Mol:
     """Cleans heterogens/adds missing atoms+hydrogens via PDBFixer, then
     builds an RDKit Mol directly from PDBFixer's own Topology bonds."""
+    # Read the metals out before PDBFixer removes them, and re-add them
+    # below as isolated atoms. They carry no bonds: the coordination
+    # geometry is what matters to interaction detection, and inventing
+    # covalent bonds to a metal would be worse than leaving it unbonded.
+    metal_ions = extract_metal_ions(pdb_path)
+
     fixer = PDBFixer(filename=pdb_path)
     fixer.removeHeterogens(keepWater=False)
     fixer.findMissingResidues()
@@ -133,11 +173,28 @@ def prepare_receptor_mol(pdb_path: str) -> Chem.Mol:
         if not mol.GetBondBetweenAtoms(i, j):
             mol.AddBond(i, j, Chem.BondType.SINGLE)
 
+    metal_indices = []
+    for resname, resnum, chain, element, _ in metal_ions:
+        a = Chem.Atom(element)
+        a.SetNoImplicit(True)  # a bare ion must not acquire implicit hydrogens
+        info = Chem.AtomPDBResidueInfo()
+        info.SetName(f'{resname:>4}'[:4])
+        info.SetResidueName(resname)
+        info.SetResidueNumber(resnum)
+        info.SetChainId(chain)
+        a.SetMonomerInfo(info)
+        metal_indices.append(mol.AddAtom(a))
+    if metal_ions:
+        listed = ', '.join(f"{r}{n}.{c}" for r, n, c, _, _ in metal_ions)
+        print(f"receptor_prep: kept {len(metal_ions)} metal ion(s) in the receptor: {listed}")
+
     conf = Chem.Conformer(mol.GetNumAtoms())
     positions = fixer.positions.value_in_unit(fixer.positions.unit)
     for omm_idx, rd_idx in atom_map.items():
         x, y, z = positions[omm_idx]
         conf.SetAtomPosition(rd_idx, Point3D(x * 10, y * 10, z * 10))  # nm -> Angstrom
+    for rd_idx, (_, _, _, _, (x, y, z)) in zip(metal_indices, metal_ions):
+        conf.SetAtomPosition(rd_idx, Point3D(x, y, z))  # already Angstrom
     mol.AddConformer(conf)
 
     # Topology.bonds() carries no bond order, so every bond above is
@@ -173,6 +230,8 @@ def write_clean_receptor_pdb(pdb_path: str, out_path: str) -> str:
     recomputes its own Topology when this file is read back for the
     pickle. Anything needing correct bonds should use the pickle.
     """
+    metal_ions = extract_metal_ions(pdb_path)
+
     fixer = PDBFixer(filename=pdb_path)
     fixer.removeHeterogens(keepWater=False)
     fixer.findMissingResidues()
@@ -181,6 +240,23 @@ def write_clean_receptor_pdb(pdb_path: str, out_path: str) -> str:
     fixer.addMissingHydrogens(7.0)
     with open(out_path, 'w') as f:
         PDBFile.writeFile(fixer.topology, fixer.positions, f, keepIds=True)
+
+    # Re-insert the metals PDBFixer stripped, so the PDBQT handed to Vina
+    # still contains them. Without this the ligand would be docked into an
+    # apo site for any metalloenzyme.
+    if metal_ions:
+        with open(out_path) as f:
+            lines = [l for l in f if not l.startswith(('END', 'CONECT'))]
+        serial = 90000
+        for resname, resnum, chain, element, (x, y, z) in metal_ions:
+            serial += 1
+            lines.append(
+                f"HETATM{serial:>5} {resname:>4}{'':1}{resname:>3} {chain}{resnum:>4}{'':4}"
+                f"{x:8.3f}{y:8.3f}{z:8.3f}{1.00:6.2f}{0.00:6.2f}{'':10}{element.upper():>2}\n"
+            )
+        lines.append('END\n')
+        with open(out_path, 'w') as f:
+            f.writelines(lines)
     return out_path
 
 
