@@ -57,7 +57,18 @@ per-pose interaction detail behind a docking score.
 
 # State of the field
 
-`posegate` occupies a narrow scope relative to several related tools. PoseBusters
+Rescoring docked poses by the interactions they make, rather than by the docking score alone, is
+an established approach. Structural interaction fingerprints [@deng2004sift] encode a pose's
+contacts as a bit string for comparison against known complexes, and SPLIF [@da2014splif] uses
+that comparison to recover actives that the docking score alone would reject. `posegate`'s
+restraint-guided pose selection is the same idea applied at selection time rather than after it:
+among the poses Vina returns, prefer one that satisfies a required contact. What differs is where
+the required contact comes from. These methods take a reference complex, or a pharmacophore
+supplied by the user, as given; `posegate` derives it by mining the target's own deposited
+structures, which is what makes it applicable to a target whose reference pharmacophore has not
+been established.
+
+`posegate` occupies a narrow scope relative to several other tools. PoseBusters
 [@buttenschoen2024posebusters] checks a pose's chemical and physical plausibility but not
 target-specific interaction recovery, so the two are complementary. Errington et al.
 [@errington2024assessing] introduced a ProLIF-based metric for how closely a predicted pose
@@ -120,6 +131,20 @@ which feature types are target-general and we claim no more than that, but the m
 being among the features that hold is consistent with the miner, rather than the fitted score,
 being the component that generalizes. Equivalent benchmarks on the remaining three families are
 the natural next step.
+
+Two limitations bound how far the pose-triage results should be read. First, these benchmarks use
+property-matched decoys in the style of DUD-E [@mysinger2012dude], and decoy sets built that way
+carry analogue and decoy bias that a fitted model can learn in place of learning protein-ligand
+interaction: Chen et al. [@chen2019hiddenbias] traced deep-learning enrichment on DUD-E to
+exactly that artifact rather than to generalization. Any margin our fitted score shows over the
+raw docking baseline should therefore be treated as an upper bound, and confirming it would
+require a benchmark built to avoid these biases, such as LIT-PCBA [@trannguyen2020litpcba]. The
+caveat applies to the fitted weights and not to the miner, which uses no decoys at all. Second,
+docking performance is known to vary sharply between targets, to the point that on LIT-PCBA even
+consensus scoring fails to enrich on several of fifteen targets. Our raw-docking baselines span
+AUC-ROC 0.52 to 0.72 across targets, which is consistent with that literature rather than
+indicative of a defect in any one setup, and is why we report per-target results rather than an
+average.
 
 # Acknowledgements
 
