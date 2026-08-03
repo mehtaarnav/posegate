@@ -27,6 +27,65 @@ from rdkit import Chem
 from rdkit.Geometry import Point3D
 
 
+# Ring atoms of the aromatic side chains, by PDB atom name, in ring
+# connectivity order. Tryptophan contributes two fused rings and appears
+# twice; the shared CD2-CE2 bond is set aromatic by whichever comes first.
+AROMATIC_SIDECHAIN_RINGS = {
+    'PHE': [['CG', 'CD1', 'CE1', 'CZ', 'CE2', 'CD2']],
+    'TYR': [['CG', 'CD1', 'CE1', 'CZ', 'CE2', 'CD2']],
+    'HIS': [['CG', 'ND1', 'CE1', 'NE2', 'CD2']],
+    'TRP': [['CG', 'CD1', 'NE1', 'CE2', 'CD2'],
+            ['CD2', 'CE2', 'CZ2', 'CH2', 'CZ3', 'CE3']],
+}
+
+
+def assign_sidechain_aromaticity(mol: Chem.RWMol) -> int:
+    """Flags the aromatic side-chain rings of PHE, TYR, HIS and TRP.
+
+    Bonds taken from OpenMM's Topology carry no bond order, so every bond
+    is created single and nothing in the molecule is aromatic. ProLIF
+    detects pi-stacking (FaceToFace/EdgeToFace) from aromatic ring
+    perception, so without this no aromatic interaction can ever be
+    reported, on any structure: the feature silently reads zero rather
+    than failing. Ring membership for the standard residues is known from
+    their names, so it is assigned from a template rather than inferred.
+
+    Returns the number of rings flagged.
+    """
+    by_residue = {}
+    for atom in mol.GetAtoms():
+        info = atom.GetPDBResidueInfo()
+        if info is None:
+            continue
+        resname = info.GetResidueName().strip()
+        if resname not in AROMATIC_SIDECHAIN_RINGS:
+            continue
+        key = (resname, info.GetResidueNumber(), info.GetChainId())
+        by_residue.setdefault(key, {})[info.GetName().strip()] = atom.GetIdx()
+
+    flagged = 0
+    for (resname, _, _), atoms in by_residue.items():
+        for ring in AROMATIC_SIDECHAIN_RINGS[resname]:
+            if not all(name in atoms for name in ring):
+                continue  # incomplete side chain; leave it alone
+            idxs = [atoms[name] for name in ring]
+            ok = True
+            for i in range(len(idxs)):
+                bond = mol.GetBondBetweenAtoms(idxs[i], idxs[(i + 1) % len(idxs)])
+                if bond is None:
+                    ok = False
+                    break
+            if not ok:
+                continue
+            for i in range(len(idxs)):
+                mol.GetBondBetweenAtoms(
+                    idxs[i], idxs[(i + 1) % len(idxs)]
+                ).SetBondType(Chem.BondType.AROMATIC)
+                mol.GetAtomWithIdx(idxs[i]).SetIsAromatic(True)
+            flagged += 1
+    return flagged
+
+
 def prepare_receptor_mol(pdb_path: str) -> Chem.Mol:
     """Cleans heterogens/adds missing atoms+hydrogens via PDBFixer, then
     builds an RDKit Mol directly from PDBFixer's own Topology bonds."""
@@ -62,12 +121,19 @@ def prepare_receptor_mol(pdb_path: str) -> Chem.Mol:
         conf.SetAtomPosition(rd_idx, Point3D(x * 10, y * 10, z * 10))  # nm -> Angstrom
     mol.AddConformer(conf)
 
+    # Topology.bonds() carries no bond order, so every bond above is
+    # single and nothing is aromatic. Flag the aromatic side chains from
+    # their residue templates before sanitizing: ProLIF derives
+    # pi-stacking from aromatic ring perception, so skipping this makes
+    # FaceToFace/EdgeToFace unreportable on every structure, which reads
+    # as "no aromatic interactions found" rather than as an error.
+    assign_sidechain_aromaticity(mol)
+
     final = mol.GetMol()
-    # All bonds are added as single-order above (Topology.bonds() doesn't
-    # reliably expose order for every residue), so skip kekulization and
-    # aromaticity perception, which would otherwise reject this on
-    # aromatic side chains; this doesn't affect the geometry/connectivity
-    # ProLIF's interaction detection actually needs.
+    # Kekulization and RDKit's own aromaticity perception stay off: bond
+    # orders are unknown, so there is no Kekule structure to find, and
+    # re-perceiving would discard the flags just assigned. Ring info is
+    # still computed, which is what ProLIF needs alongside those flags.
     ops = Chem.SANITIZE_ALL ^ Chem.SANITIZE_KEKULIZE ^ Chem.SANITIZE_SETAROMATICITY ^ Chem.SANITIZE_PROPERTIES
     Chem.SanitizeMol(final, sanitizeOps=ops)
     return final
