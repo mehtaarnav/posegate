@@ -19,7 +19,8 @@ def dock_ligand(
     center: list,
     box_size: list = [20, 20, 20],
     exhaustiveness: int = 8,
-    n_poses: int = 1
+    n_poses: int = 1,
+    cpu: int = 0
 ) -> dict:
     """Runs AutoDock Vina and returns pose score(s).
 
@@ -27,11 +28,16 @@ def dock_ligand(
     top n_poses candidates (score + multi-model PDBQT) rather than a
     single answer, so a caller can apply a restraint (e.g. a required
     H-bond) as a pose *selection* filter after the fact.
+
+    cpu is the number of threads Vina itself uses; 0 lets it detect and
+    use every core. Callers docking several ligands concurrently must set
+    this to 1, otherwise each worker tries to claim the whole machine and
+    the processes contend rather than sharing it.
     """
     ligand_pdbqt = ligand_sdf.replace('.sdf', '.pdbqt')
     prepare_ligand(ligand_sdf, ligand_pdbqt)
 
-    v = Vina(sf_name='vina')
+    v = Vina(sf_name='vina', cpu=cpu)
     v.set_receptor(receptor_pdbqt)
     v.set_ligand_from_file(ligand_pdbqt)
     v.compute_vina_maps(center=center, box_size=box_size)
