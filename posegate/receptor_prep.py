@@ -98,7 +98,18 @@ def prepare_receptor_mol(pdb_path: str) -> Chem.Mol:
 
     mol = Chem.RWMol()
     atom_map = {}
+    skipped_residues = set()
     for atom in fixer.topology.atoms():
+        # Residues numbered below 1 are cloning/expression-tag artifacts
+        # (e.g. 6Q3F carries SER-3, PRO-2, GLU-1, PHE0 ahead of CDK2's
+        # Met1). They are never part of a binding site, and ProLIF stores
+        # residue numbers as uint32, so leaving them in raises
+        # "OverflowError: Python integer -3 out of bounds for uint32" when
+        # the fingerprint is built. Dropped here, and reported rather than
+        # removed silently.
+        if int(atom.residue.id) < 1:
+            skipped_residues.add((atom.residue.name, int(atom.residue.id), atom.residue.chain.id))
+            continue
         a = Chem.Atom(atom.element.symbol)
         info = Chem.AtomPDBResidueInfo()
         info.SetName(f' {atom.name:<3}'[:4])
@@ -109,7 +120,15 @@ def prepare_receptor_mol(pdb_path: str) -> Chem.Mol:
         idx = mol.AddAtom(a)
         atom_map[atom.index] = idx
 
+    if skipped_residues:
+        listed = ', '.join(f"{n}{i}.{c}" for n, i, c in sorted(skipped_residues, key=lambda r: r[1]))
+        print(f"receptor_prep: dropped {len(skipped_residues)} residue(s) numbered below 1 "
+              f"(expression-tag artifacts, not part of the binding site): {listed}")
+
     for bond in fixer.topology.bonds():
+        # Bonds to a dropped tag residue have no counterpart here.
+        if bond.atom1.index not in atom_map or bond.atom2.index not in atom_map:
+            continue
         i, j = atom_map[bond.atom1.index], atom_map[bond.atom2.index]
         if not mol.GetBondBetweenAtoms(i, j):
             mol.AddBond(i, j, Chem.BondType.SINGLE)
