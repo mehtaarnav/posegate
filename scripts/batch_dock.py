@@ -10,7 +10,9 @@ from rdkit import Chem
 from rdkit.Chem import AllChem
 from rdkit.Chem.MolStandardize import rdMolStandardize
 from posegate.docking import prepare_receptor, dock_ligand
-from posegate.autopsy import generate_autopsy_report, find_conserved_hbond, rank_batch
+from posegate.autopsy import (
+    generate_autopsy_report, find_conserved_hbond, rank_batch, load_pose_mol
+)
 from posegate.receptor_prep import (
     prepare_receptor_pickle, load_receptor_mol, write_clean_receptor_pdb
 )
@@ -32,7 +34,18 @@ def prepare_ligand_sdf(smiles: str, out_path: str):
         mol = rdMolStandardize.LargestFragmentChooser().choose(mol)
     mol = Chem.AddHs(mol)
     if AllChem.EmbedMolecule(mol, AllChem.ETKDGv3()) != 0:
-        raise ValueError("3D embedding failed")
+        # ETKDG's distance-geometry start fails on large, highly flexible
+        # ligands. Retrying from random coordinates recovers them. This is
+        # not a rare edge case and it is not class-neutral: HIV-1 protease
+        # actives are peptidomimetics averaging 655 Da and 14.5 rotatable
+        # bonds, and 23% of them failed to embed against 6% of their
+        # property-matched decoys. Dropping them would leave the benchmark
+        # measuring whichever actives happened to be small enough.
+        params = AllChem.ETKDGv3()
+        params.useRandomCoords = True
+        params.maxIterations = 2000
+        if AllChem.EmbedMolecule(mol, params) != 0:
+            raise ValueError("3D embedding failed (including random-coordinate retry)")
     Chem.MolToMolFile(mol, out_path)
 
 def compute_ligand_box_size(sdf_path: str, margin: float = 8.0, min_size: float = 16.0):
@@ -66,7 +79,7 @@ def select_restrained_pose(dock_res: dict, receptor_mol, n_poses: int,
         pose_sdf = f"{split_prefix}{i + 1}.sdf"
         if not os.path.exists(pose_sdf):
             continue
-        lig = Chem.MolFromMolFile(pose_sdf, removeHs=False)
+        lig = load_pose_mol(pose_sdf)
         if lig is None:
             continue
         if find_conserved_hbond(lig, receptor_mol, residues=conserved_residues,

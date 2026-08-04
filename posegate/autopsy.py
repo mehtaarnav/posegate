@@ -25,6 +25,34 @@ IFP = Dict[Any, Dict[str, tuple]]
 def get_vdw_radius(element: str) -> float:
     return VDW_RADII.get(element.upper(), 1.70)
 
+def load_pose_mol(sdf_path: str) -> Optional[Chem.Mol]:
+    """Loads a docked pose, tolerating output RDKit rejects outright.
+
+    Poses reach us as SDF written by OpenBabel from Vina's PDBQT, and that
+    round trip can produce valence or kekulization states RDKit's default
+    parser refuses, returning None. Large peptidomimetic ligands hit this
+    disproportionately, so treating an unparseable pose as a failed
+    compound quietly biases a benchmark toward its smaller ligands.
+    Parsing without sanitization and then sanitizing everything except the
+    steps that fail on this output recovers the pose with its geometry,
+    which is what interaction detection needs.
+    """
+    mol = Chem.MolFromMolFile(sdf_path, removeHs=False)
+    if mol is not None:
+        return mol
+    mol = Chem.MolFromMolFile(sdf_path, removeHs=False, sanitize=False)
+    if mol is None:
+        return None
+    try:
+        Chem.SanitizeMol(
+            mol,
+            sanitizeOps=Chem.SANITIZE_ALL ^ Chem.SANITIZE_KEKULIZE ^ Chem.SANITIZE_PROPERTIES,
+        )
+    except Exception:
+        return None
+    return mol
+
+
 def build_ifp(ligand_mol: Chem.Mol, receptor_mol: Chem.Mol) -> IFP:
     """Computes the full ProLIF interaction fingerprint once per
     ligand/receptor pair; all interaction-detection functions below derive
@@ -201,7 +229,7 @@ def generate_autopsy_report(
     conserved_residues: Union[ConservedResidue, Sequence[ConservedResidue], None] = None,
     conserved_mode: str = 'any'
 ) -> Dict[str, Any]:
-    ligand_mol = Chem.MolFromMolFile(ligand_sdf_path, removeHs=False)
+    ligand_mol = load_pose_mol(ligand_sdf_path)
     if receptor_pdb_path.endswith('.pkl'):
         # Preferred path for real multi-residue receptors: bonds computed
         # by PDBFixer/OpenMM's Topology and preserved losslessly via
