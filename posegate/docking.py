@@ -1,15 +1,38 @@
 # posegate/posegate/docking.py
+import shutil
 import subprocess
 from pathlib import Path
 from vina import Vina
 
+
+def require_obabel():
+    """Raises a clear error if the obabel CLI is not on PATH.
+
+    OpenBabel is a runtime dependency for every docking call (PDB/SDF to
+    PDBQT conversion) but is not pip-installable, so it is listed in
+    environment.yml but cannot be listed in pyproject.toml's install_requires.
+    `pip install -e .` therefore succeeds even without it, and the first
+    docking call would otherwise fail deep inside a subprocess with a bare
+    FileNotFoundError that does not say what is missing or how to fix it."""
+    if shutil.which("obabel") is None:
+        raise RuntimeError(
+            "The 'obabel' command was not found on PATH. posegate shells out to "
+            "OpenBabel's CLI to convert between PDB/SDF and the PDBQT format Vina "
+            "requires; it is not installable via pip. Install the conda environment "
+            "(conda env create -f environment.yml) or install OpenBabel separately "
+            "and ensure 'obabel' is on PATH."
+        )
+
+
 def prepare_receptor(pdb_path: str, pdbqt_path: str):
     """Uses OpenBabel to convert PDB to PDBQT and add hydrogens."""
+    require_obabel()
     cmd = f"obabel {pdb_path} -O {pdbqt_path} -xr -h"
     subprocess.run(cmd, shell=True, check=True, capture_output=True)
 
 def prepare_ligand(ligand_sdf: str, ligand_pdbqt: str):
     """Uses OpenBabel to convert an SDF ligand to PDBQT (Vina requires PDBQT)."""
+    require_obabel()
     cmd = f"obabel {ligand_sdf} -O {ligand_pdbqt}"
     subprocess.run(cmd, shell=True, check=True, capture_output=True)
 

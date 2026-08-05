@@ -71,7 +71,16 @@ def evaluate_steric_clashes(
     atom pair within van der Waals contact range); overlap_A is computed
     from that contact's exact distance using the same VDW_RADII table as
     before, so downstream severity thresholds (>0.8 Å = severe) are
-    unchanged."""
+    unchanged.
+
+    threshold_overlap is a hard cutoff on a receptor treated as rigid: a
+    0.41 A overlap is flagged, a 0.39 A overlap is not, with nothing
+    graded in between. Docking does not model side-chain relaxation, so a
+    slight overlap that a real side chain would rotate away from is
+    scored identically to one that could not be resolved at all. This is
+    a known limitation of the rigid-receptor approximation generally, not
+    specific to this threshold's exact value, and is not addressed here.
+    """
     ifp = ifp if ifp is not None else build_ifp(ligand_mol, receptor_mol)
     clashes = []
 
@@ -145,6 +154,66 @@ def find_aromatic_contacts(
                 })
 
     return aromatic
+
+
+# First-row and related catalytic transition metals posegate.receptor_prep
+# retains in a prepared receptor (see receptor_prep.METAL_IONS, duplicated
+# here by element symbol rather than imported to keep this a pure geometry
+# check with no dependency on how the receptor was prepared).
+METAL_ELEMENTS = {'Zn', 'Mg', 'Mn', 'Fe', 'Cu', 'Co', 'Ni', 'Cd', 'Ca'}
+# Elements that commonly donate a lone pair to a coordinated metal.
+METAL_COORDINATING_ELEMENTS = {'N', 'O', 'S'}
+# Typical first-shell metal-donor distance is 2.0-2.3 A; 2.6 A leaves
+# margin for docked-pose geometry error without reaching into what would
+# clearly be a non-coordinating contact.
+METAL_COORDINATION_CUTOFF = 2.6
+
+
+def find_metal_coordination(
+    ligand_mol: Chem.Mol, receptor_mol: Chem.Mol,
+    cutoff: float = METAL_COORDINATION_CUTOFF
+) -> List[Dict[str, Any]]:
+    """Ligand N/O/S atoms within coordination distance of a receptor metal.
+
+    ProLIF has no coordination-bond interaction type, and the metal ions
+    posegate.receptor_prep retains are deliberately added without bonds
+    (see that module), so coordination is not visible anywhere in the ProLIF
+    fingerprint this module otherwise relies on. It is detected here purely
+    geometrically instead. For carbonic anhydrase, whose defining
+    pharmacophore is a Zn-sulfonamide coordination bond at roughly 2.0 A,
+    this is the difference between reporting the actual mechanism and
+    reporting nothing more specific than a van der Waals contact.
+
+    This is reporting-only. It is not part of posegate_score: adding a
+    sixth feature would require refitting every target's weights, and nothing
+    in the five-target validation currently depends on it (the carbonic
+    anhydrase result used there rests on the Thr199 hydrogen bond, not on
+    zinc coordination).
+    """
+    metal_atoms = [a for a in receptor_mol.GetAtoms() if a.GetSymbol() in METAL_ELEMENTS]
+    if not metal_atoms or ligand_mol.GetNumConformers() == 0 or receptor_mol.GetNumConformers() == 0:
+        return []
+
+    rconf = receptor_mol.GetConformer()
+    lconf = ligand_mol.GetConformer()
+    contacts = []
+    for metal in metal_atoms:
+        mpos = rconf.GetAtomPosition(metal.GetIdx())
+        info = metal.GetPDBResidueInfo()
+        metal_label = (f"{info.GetResidueName().strip()}{info.GetResidueNumber()}.{info.GetChainId()}"
+                       if info else metal.GetSymbol())
+        for atom in ligand_mol.GetAtoms():
+            if atom.GetSymbol() not in METAL_COORDINATING_ELEMENTS:
+                continue
+            dist = lconf.GetAtomPosition(atom.GetIdx()).Distance(mpos)
+            if dist <= cutoff:
+                contacts.append({
+                    'metal': metal_label,
+                    'ligand_atom': f"{atom.GetSymbol()}{atom.GetIdx()}",
+                    'distance_A': round(dist, 2),
+                })
+    return sorted(contacts, key=lambda c: c['distance_A'])
+
 
 def normalize_conserved_residues(
     residues: Union[ConservedResidue, Sequence[ConservedResidue]]
@@ -224,6 +293,35 @@ def find_conserved_hbond(
 
     return [hb for r in residue_list for hb in per_residue[r]]
 
+
+# Provisional, BRD4-only weights from scripts/recalibrate_weights.py's fit
+# on the 90-compound BRD4 benchmark. See the longer comment inside
+# generate_autopsy_report for what these are and are not safe to use for.
+POSEGATE_SCORE_WEIGHTS = {
+    'hbond_count': 1.047,
+    'clash_count': 5.294,
+    'aromatic_count': 6.584,
+    'conserved_hbond': -2.063,
+}
+
+
+def compute_posegate_score(
+    vina_score: float, n_hbonds: int, n_clashes: int, n_aromatic: int, conserved_hit: bool
+) -> float:
+    """Applies POSEGATE_SCORE_WEIGHTS to raw counts. Pulled out of
+    generate_autopsy_report as a pure function so the weights' arithmetic
+    (in particular, which terms add vs. subtract) is directly unit-testable
+    without needing to build a real docked complex."""
+    w = POSEGATE_SCORE_WEIGHTS
+    score = vina_score
+    score += w['hbond_count'] * n_hbonds
+    score += w['clash_count'] * n_clashes
+    score += w['aromatic_count'] * n_aromatic
+    if conserved_hit:
+        score += w['conserved_hbond']
+    return score
+
+
 def generate_autopsy_report(
     ligand_sdf_path: str, receptor_pdb_path: str, vina_score: float,
     conserved_residues: Union[ConservedResidue, Sequence[ConservedResidue], None] = None,
@@ -259,6 +357,10 @@ def generate_autopsy_report(
             residues=conserved_residues, mode=conserved_mode, ifp=ifp
         ),
         'aromatic': find_aromatic_contacts(ligand_mol, receptor_mol, ifp=ifp),
+        # Geometric, not from the ProLIF fingerprint (ProLIF has no
+        # coordination-bond type); reporting-only, not part of
+        # posegate_score below. See find_metal_coordination.
+        'metal_coordination': find_metal_coordination(ligand_mol, receptor_mol),
         'clashes': evaluate_steric_clashes(ligand_mol, receptor_mol, ifp=ifp),
         'decision': 'PENDING',
         'posegate_score': 0.0,
@@ -267,42 +369,32 @@ def generate_autopsy_report(
 
     # --- DECISION LOGIC ---
     #
-    # These per-feature weights come from scripts/recalibrate_weights.py:
-    # an L2-regularized logistic regression fit on the 65-compound BRD4
-    # benchmark (22 actives, 43 property-matched decoys), predicting
-    # active/decoy from (vina_score, hbond_count, conserved_hbond,
-    # aromatic_count, clash_count), with weights read off relative to the
-    # fitted vina_score coefficient so the whole formula stays in
-    # vina_score's own kcal/mol-like units. Cross-validated (out-of-fold)
-    # AUC-ROC on that benchmark: 0.618, vs 0.542 for raw vina_score alone
-    # — a real, non-circular improvement, but calibrated on one target and
-    # 65 compounds; treat these specific numbers as provisional until
-    # validated on more targets, not as universal constants.
+    # PROVISIONAL, BRD4-ONLY DEFAULTS. These per-feature weights come from
+    # scripts/recalibrate_weights.py, fit on the 90-compound BRD4 benchmark
+    # (30 actives, 60 property-matched decoys) built by the current
+    # scripts/fetch_benchmark_dataset.py, predicting active/decoy from
+    # (vina_score, hbond_count, conserved_hbond, aromatic_count,
+    # clash_count), weights read off relative to the fitted vina_score
+    # coefficient so the formula stays in vina_score's own kcal/mol-like
+    # units. Cross-validated (out-of-fold) AUC-ROC on that benchmark: 0.619,
+    # vs 0.604 for raw vina_score alone.
     #
-    # Generic hbond_count got a positive (penalizing) weight: in this
-    # benchmark, decoys tended to form more generic/incidental H-bonds
-    # than actives, while the specific conserved_hbond contact remained a
-    # strong reward. An earlier version of this comment attributed that to
-    # the decoys being property-matched on donor/acceptor counts, which
-    # they were not: the decoy selection in scripts/fetch_brd4_dataset.py
-    # matched only molecular weight, logP and rotatable bonds, so actives
-    # and decoys were free to differ in how many H-bonds they could form
-    # at all. scripts/fetch_benchmark_dataset.py now also matches donor
-    # and acceptor counts, so these weights should be refitted from a
-    # benchmark rebuilt with that script before they are relied on.
-    #
-    # aromatic_count was regularized to exactly zero in every fit, which
-    # was previously read as the feature not being useful. It was in fact
-    # never measured: prepared receptors had no aromatic rings at all
-    # until posegate.receptor_prep began assigning side-chain aromaticity,
-    # so ProLIF could not report pi-stacking and the count was constant at
-    # zero. Nothing is known about whether this feature helps; it needs a
-    # refit against receptors prepared by the current code.
-    posegate_score = report['vina_score']
-    posegate_score += 2.706 * len(report['hbonds'])
-    posegate_score += 0.813 * len(report['clashes'])
-    if report['conserved_hbond']:
-        posegate_score -= 3.104
+    # scripts/compare_feature_weights.py, run across BRD4/CDK2/estrogen
+    # receptor alpha/HIV-1 protease/carbonic anhydrase, shows that
+    # conserved_hbond is the only one of these five features whose sign is
+    # bootstrap-stable in the same direction on every target (0.94-1.00
+    # sign stability over 200 resamples per target); vina_score, hbond_count
+    # and clash_count all reverse sign on at least one target. These BRD4
+    # weights are therefore not safe to use unmodified on another target --
+    # call scripts/recalibrate_weights.py on that target's own benchmark
+    # instead, exactly as the five-target validation did.
+    posegate_score = compute_posegate_score(
+        vina_score=report['vina_score'],
+        n_hbonds=len(report['hbonds']),
+        n_clashes=len(report['clashes']),
+        n_aromatic=len(report['aromatic']),
+        conserved_hit=bool(report['conserved_hbond']),
+    )
 
     # Severe clashes (>0.8 A overlap) are a hard structural-validity gate,
     # not a statistically-fit feature: this is a physically implausible
@@ -312,18 +404,19 @@ def generate_autopsy_report(
     report['posegate_score'] = round(posegate_score, 2)
 
     # Absolute thresholds for standalone single-pose use (no batch to rank
-    # against): set to the same benchmark's 30th/70th posegate_score
-    # percentiles, matching rank_batch()'s default 0.3/0.4 fractions so a
-    # standalone call and a batch call land on roughly the same operating
-    # point. For screening many candidates at once, prefer rank_batch()
-    # (relative ranking) over these fixed cutoffs.
+    # against): set to the same BRD4 benchmark's 30th/70th posegate_score
+    # percentiles under the weights above, matching rank_batch()'s default
+    # 0.3/0.4 fractions so a standalone call and a batch call land on
+    # roughly the same operating point. Provisional and BRD4-specific for
+    # the same reason the weights are. For screening many candidates at
+    # once, prefer rank_batch() (relative ranking) over these fixed cutoffs.
     if severe_clashes:
         report['decision'] = 'REJECT'
         report['explanation'].append(f"Severe steric clash detected (max overlap: {severe_clashes[0]['overlap_A']} Å).")
-    elif posegate_score <= -8.5:
+    elif posegate_score <= -8.66:
         report['decision'] = 'PRIORITIZE'
         report['explanation'].append(f"Strong binding profile (PoseGate Score: {posegate_score}).")
-    elif posegate_score <= -6.7:
+    elif posegate_score <= -7.64:
         report['decision'] = 'REVIEW'
         report['explanation'].append(f"Moderate binding profile (PoseGate Score: {posegate_score}). Requires manual inspection.")
     else:

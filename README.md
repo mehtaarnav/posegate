@@ -151,11 +151,11 @@ regression, not hand-tuned) against that target's own mined pharmacophore:
 
 | Target | N | actives | raw Vina AUC | fitted AUC |
 |---|---|---|---|---|
-| CDK2 | 64 | 22 | 0.52 | 0.49 |
-| BRD4 | 90 | 30 | 0.60 | 0.63 |
+| CDK2 | 64 | 22 | 0.52 | 0.52 |
+| BRD4 | 90 | 30 | 0.60 | 0.62 |
 | Estrogen receptor alpha | 223 | 75 | 0.72 | 0.85 |
 | HIV-1 protease | 225 | 75 | 0.72 | 0.77 |
-| Carbonic anhydrase | 261 | 87 | 0.25 | 0.76 |
+| Carbonic anhydrase | 261 | 87 | 0.25 | 0.79 |
 
 Fitted weight *magnitudes* are not comparable across targets at these sample sizes: with 64 to
 261 compounds per target the confidence intervals overlap too much for a pairwise AUC comparison

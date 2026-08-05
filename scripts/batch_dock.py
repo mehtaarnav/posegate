@@ -4,12 +4,13 @@ import json
 import os
 import subprocess
 from concurrent.futures import ProcessPoolExecutor, as_completed
+from pathlib import Path
 
 import pandas as pd
 from rdkit import Chem
 from rdkit.Chem import AllChem
 from rdkit.Chem.MolStandardize import rdMolStandardize
-from posegate.docking import prepare_receptor, dock_ligand
+from posegate.docking import prepare_receptor, dock_ligand, require_obabel
 from posegate.autopsy import (
     generate_autopsy_report, find_conserved_hbond, rank_batch, load_pose_mol
 )
@@ -26,7 +27,15 @@ def prepare_ligand_sdf(smiles: str, out_path: str):
     outright ("Unknown or inappropriate tag found in flex residue or
     ligand"), silently dropping the compound from the benchmark. Since the
     counterion is not what binds, the largest fragment is the right thing
-    to dock."""
+    to dock.
+
+    This assumes the largest fragment by heavy-atom count is the
+    pharmacologically active one, which holds for every ligand in the
+    five-target benchmarks used so far (small-molecule salts of an
+    organic acid/base) but would not hold for an active species that is
+    itself the smaller fragment paired with a larger counterion (e.g.
+    some bisphosphonates). Not handled; affected compounds would be
+    docked with the wrong fragment."""
     mol = Chem.MolFromSmiles(smiles)
     if mol is None:
         raise ValueError(f"RDKit could not parse SMILES: {smiles}")
@@ -71,8 +80,9 @@ def select_restrained_pose(dock_res: dict, receptor_mol, n_poses: int,
     residue_number, chain_id) -- target-specific (e.g. BRD4's Asn140,
     CDK2's Leu83, or the two residues of estrogen receptor alpha's
     Glu353/Arg394 charge clamp), so it must be supplied by the caller."""
+    require_obabel()
     pose_file = dock_res['pose_file']
-    split_prefix = pose_file.replace('.pdbqt', '_p')
+    split_prefix = str(Path(pose_file).with_suffix('')) + '_p'
     subprocess.run(f"obabel {pose_file} -O {split_prefix}.sdf -m", shell=True, capture_output=True)
 
     for i, score in enumerate(dock_res['scores']):

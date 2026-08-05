@@ -12,15 +12,51 @@ the literature) into a data-driven, target-agnostic pipeline: point it at
 any target's set of ligand-bound PDB structures and it surfaces the
 equivalent conserved-contact residues automatically, from the structures
 themselves rather than a hardcoded residue name/number.
+
+Output rows are per (residue, interaction type), and VdWContact is a
+superset of the specific types: any hydrogen-bonded, hydrophobic or
+aromatic contact is necessarily also within van der Waals range, so a
+residue can appear as both e.g. 'VdWContact 1.00' and 'HBDonor 0.80' with
+nothing in either row indicating the second is a more specific
+description of (part of) the first. Callers that want only the specific
+interaction types should filter 'VdWContact' out themselves (see
+scripts/run_conserved_contact_miner.py's --exclude_vdw, and
+scripts/compare_visgremlin.py's POSEGATE_SPECIFIC, which already does
+this for its own comparison).
 """
 
+import math
 from collections import defaultdict
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Tuple
 
 from rdkit import Chem
 
 from posegate.autopsy import build_ifp
 from posegate.receptor_prep import load_receptor_mol
+
+
+def wilson_interval(count: int, n: int, z: float = 1.96) -> Tuple[float, float]:
+    """95%-default Wilson score interval for a binomial proportion.
+
+    A raw frequency treats 3/6 and 11/22 as the same number, 50%, but
+    they carry very different statistical weight: the first is consistent
+    with anywhere from about 19% to 81% under a 95% interval, the second
+    with about 31% to 69%. mine_conserved_contacts' frequency threshold
+    convention (commonly read at 0.5) has no such distinction built in, so
+    this interval is reported alongside every frequency rather than
+    silently treating a 6-structure and a 22-structure ensemble as
+    equally conclusive at the same cutoff. Wilson's interval is used
+    rather than the normal approximation because it stays inside [0, 1]
+    and remains reasonable at small n and at frequencies near 0 or 1,
+    both of which are common here (a residue seen in 1 of 6 structures).
+    """
+    if n == 0:
+        return (0.0, 0.0)
+    p = count / n
+    denom = 1 + z * z / n
+    center = p + z * z / (2 * n)
+    adj = z * math.sqrt(p * (1 - p) / n + z * z / (4 * n * n))
+    return (max(0.0, (center - adj) / denom), min(1.0, (center + adj) / denom))
 
 
 def mine_conserved_contacts(structures: List[Dict[str, str]]) -> List[Dict[str, Any]]:
@@ -37,13 +73,22 @@ def mine_conserved_contacts(structures: List[Dict[str, str]]) -> List[Dict[str, 
               why .pkl is preferred for real multi-residue receptors)
 
     Returns:
-        A list of {'residue', 'interaction', 'n_structures', 'frequency'}
-        dicts, sorted by descending frequency (fraction of the ensemble in
-        which that (residue, interaction type) pair occurs at least once).
-        A residue interacting with every ligand's own chemically distinct
-        scaffold, via the same interaction type, is a conserved contact;
-        one hit in a single structure is very likely specific to that one
-        ligand rather than a general pharmacophore feature of the pocket.
+        A list of {'residue', 'interaction', 'n_structures', 'n_ensemble',
+        'frequency', 'ci95'} dicts, sorted by descending frequency (fraction
+        of the ensemble in which that (residue, interaction type) pair
+        occurs at least once). A residue interacting with every ligand's
+        own chemically distinct scaffold, via the same interaction type,
+        is a conserved contact; one hit in a single structure is very
+        likely specific to that one ligand rather than a general
+        pharmacophore feature of the pocket.
+
+        'frequency' is a point estimate, not a statistically established
+        value: a threshold like 0.5 means something different for a
+        6-structure ensemble than for a 22-structure one, and no
+        correction is applied for scoring many residues from the same
+        ensemble at once. 'ci95' (a Wilson score interval; see
+        wilson_interval) makes that uncertainty explicit rather than
+        implicit in the ensemble size alone.
     """
     counts: Dict[tuple, int] = defaultdict(int)
     n_valid = 0
@@ -85,7 +130,9 @@ def mine_conserved_contacts(structures: List[Dict[str, str]]) -> List[Dict[str, 
             'residue': residue,
             'interaction': interaction,
             'n_structures': count,
-            'frequency': round(count / n_valid, 3)
+            'n_ensemble': n_valid,
+            'frequency': round(count / n_valid, 3),
+            'ci95': tuple(round(x, 3) for x in wilson_interval(count, n_valid)),
         }
         for (residue, interaction), count in counts.items()
     ]

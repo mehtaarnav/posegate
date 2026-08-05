@@ -34,6 +34,7 @@ import pandas as pd
 from sklearn.linear_model import LogisticRegressionCV
 from sklearn.metrics import roc_auc_score
 from sklearn.model_selection import StratifiedKFold, cross_val_predict
+from sklearn.pipeline import make_pipeline
 from sklearn.preprocessing import StandardScaler
 
 FEATURES = ['vina_score', 'hbond_count', 'conserved_hbond', 'aromatic_count', 'clash_count']
@@ -48,27 +49,42 @@ def load(results_csv: str):
     return X, y
 
 
-def fit_once(X, y, seed):
+def make_model(seed):
+    # StandardScaler lives inside the pipeline, not applied once up front,
+    # so cross_val_predict and each bootstrap resample refit it on only
+    # their own data. Fitting it on the full dataset before splitting
+    # would let each fold's training statistics see its own test rows
+    # (and each bootstrap resample would be standardized using the
+    # original, unresampled dataset's mean/variance rather than its own),
+    # both of which understate the genuine out-of-sample variance this
+    # script exists to report honestly.
     cv = StratifiedKFold(n_splits=5, shuffle=True, random_state=seed)
-    model = LogisticRegressionCV(cv=cv, penalty='l2', scoring='roc_auc', max_iter=5000)
-    model.fit(X, y)
-    return model.coef_[0]
+    return make_pipeline(StandardScaler(), LogisticRegressionCV(
+        cv=cv, penalty='l2', scoring='roc_auc', max_iter=5000))
+
+
+def fit_once(X_raw, y, seed):
+    model = make_model(seed)
+    model.fit(X_raw, y)
+    return model.named_steps['logisticregressioncv'].coef_[0]
 
 
 def analyse(label, results_csv, n_boot, seed):
     X_raw, y = load(results_csv)
-    X = StandardScaler().fit_transform(X_raw)
 
+    model = make_model(seed)
     cv = StratifiedKFold(n_splits=5, shuffle=True, random_state=seed)
-    model = LogisticRegressionCV(cv=cv, penalty='l2', scoring='roc_auc', max_iter=5000)
-    oof = cross_val_predict(model, X, y, cv=cv, method='decision_function')
+    oof = cross_val_predict(model, X_raw, y, cv=cv, method='decision_function')
     auc_fit = roc_auc_score(y, oof)
     # Raw vina_score baseline: lower (more negative) is more active-like.
     auc_vina = roc_auc_score(y, -X_raw[:, 0])
 
-    coefs = fit_once(X, y, seed)
+    coefs = fit_once(X_raw, y, seed)
 
     # Bootstrap for sign stability, stratified so class balance is kept.
+    # Each resample refits its own scaler (see make_model), so the
+    # bootstrap variance reflects genuine resampling uncertainty in the
+    # standardization too, not just in the logistic regression.
     rng = np.random.default_rng(seed)
     idx_pos = np.flatnonzero(y == 1)
     idx_neg = np.flatnonzero(y == 0)
@@ -79,7 +95,7 @@ def analyse(label, results_csv, n_boot, seed):
             rng.choice(idx_neg, size=len(idx_neg), replace=True),
         ])
         try:
-            boot[b] = fit_once(X[take], y[take], seed)
+            boot[b] = fit_once(X_raw[take], y[take], seed)
         except Exception:
             boot[b] = np.nan
 

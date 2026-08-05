@@ -37,6 +37,54 @@ from rdkit.Geometry import Point3D
 METAL_IONS = {'ZN', 'MG', 'MN', 'FE', 'FE2', 'CU', 'CU1', 'CO', 'NI', 'CD', 'CA'}
 
 
+def find_discarded_heterogens(pdb_path: str) -> set:
+    """Names of HETATM residues that PDBFixer's removeHeterogens will
+    delete and that this module does not put back (everything except
+    water and the retained metal ions).
+
+    A ligand that binds by coordinating a covalently- or non-covalently-
+    bound cofactor -- heme iron, an FAD/NAD cofactor, ATP in a kinase's
+    second site -- would be docked into a receptor missing that cofactor,
+    with nothing to say so. This cannot be fixed generically the way
+    metal retention was (a cofactor needs bonds and possibly missing-atom
+    completion, not just re-inserted coordinates), so it is surfaced as a
+    warning rather than silently handled.
+    """
+    found = set()
+    with open(pdb_path) as f:
+        for line in f:
+            if not line.startswith('HETATM'):
+                continue
+            resname = line[17:20].strip()
+            if resname != 'HOH' and resname not in METAL_IONS:
+                found.add(resname)
+    return found
+
+
+def warn_on_discarded_heterogens(pdb_path: str) -> None:
+    discarded = find_discarded_heterogens(pdb_path)
+    if discarded:
+        print(f"receptor_prep: WARNING - removing non-metal heterogen(s) {sorted(discarded)} "
+              f"from {pdb_path}. If any of these is a cofactor that forms part of the binding "
+              f"site (e.g. a heme, ATP, NAD or FAD), the prepared receptor will be missing it "
+              f"and docked poses will not reflect its presence.")
+
+
+def pdb_atom_name(name: str) -> str:
+    """Formats an atom name into PDB's 4-column field without truncating it.
+
+    The previous formatting, f' {name:<3}'[:4], pads to 4 characters by
+    prepending a space and then truncates to 4, which drops the last
+    character of any 4-character name. HD11 and HD12 (the two delta
+    hydrogens of LEU/VAL-family residues) both became "HD1", making them
+    indistinguishable by name. Nothing currently reads AtomPDBResidueInfo's
+    name field, so no existing result depends on this, but any output that
+    round-trips through it (e.g. a written-out PDB) would silently lose the
+    distinction.
+    """
+    return name if len(name) >= 4 else f' {name:<3}'
+
+
 def extract_metal_ions(pdb_path: str):
     """Reads catalytic metal ions out of a PDB, before PDBFixer discards them.
 
@@ -127,6 +175,7 @@ def prepare_receptor_mol(pdb_path: str) -> Chem.Mol:
     # below as isolated atoms. They carry no bonds: the coordination
     # geometry is what matters to interaction detection, and inventing
     # covalent bonds to a metal would be worse than leaving it unbonded.
+    warn_on_discarded_heterogens(pdb_path)
     metal_ions = extract_metal_ions(pdb_path)
 
     fixer = PDBFixer(filename=pdb_path)
@@ -152,7 +201,7 @@ def prepare_receptor_mol(pdb_path: str) -> Chem.Mol:
             continue
         a = Chem.Atom(atom.element.symbol)
         info = Chem.AtomPDBResidueInfo()
-        info.SetName(f' {atom.name:<3}'[:4])
+        info.SetName(pdb_atom_name(atom.name))
         info.SetResidueName(atom.residue.name)
         info.SetResidueNumber(int(atom.residue.id))
         info.SetChainId(atom.residue.chain.id)
@@ -178,7 +227,7 @@ def prepare_receptor_mol(pdb_path: str) -> Chem.Mol:
         a = Chem.Atom(element)
         a.SetNoImplicit(True)  # a bare ion must not acquire implicit hydrogens
         info = Chem.AtomPDBResidueInfo()
-        info.SetName(f'{resname:>4}'[:4])
+        info.SetName(pdb_atom_name(resname))
         info.SetResidueName(resname)
         info.SetResidueNumber(resnum)
         info.SetChainId(chain)
@@ -230,6 +279,7 @@ def write_clean_receptor_pdb(pdb_path: str, out_path: str) -> str:
     recomputes its own Topology when this file is read back for the
     pickle. Anything needing correct bonds should use the pickle.
     """
+    warn_on_discarded_heterogens(pdb_path)
     metal_ions = extract_metal_ions(pdb_path)
 
     fixer = PDBFixer(filename=pdb_path)
