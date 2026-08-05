@@ -43,6 +43,15 @@ LIKELY_NON_LIGAND = {
     'NH4', 'SCN', 'AZI', 'P6G', '2PE', 'PG4', '12P', '15P', 'XPE', 'DTT',
     'TCE', 'CO', 'MN', 'NI', 'CD', 'CS', 'RB', 'SR', 'BA', 'LI', 'F',
     'OXY', 'UNX', 'UNL', 'MN3', 'CU', 'CU1', 'FE', 'FE2',
+    # Heavy-atom isomorphous-replacement/anomalous-phasing derivatives,
+    # common in older crystal structures, retained in the deposited
+    # coordinates but playing no role in binding. Found the hard way: a
+    # bound mercury ion got picked as "the ligand" for two carbonic
+    # anhydrase structures, and ProLIF's VdWContact then crashed outright
+    # (no van der Waals radius for Hg in its chosen radii table) rather
+    # than just producing a nonsensical result.
+    'HG', 'PT', 'AU', 'AG', 'OS', 'IR', 'PD', 'W', 'RE', 'SM', 'GD', 'YB',
+    'TB', 'EU', 'LU', 'PB', 'U', 'TH', 'HO',
 }
 
 

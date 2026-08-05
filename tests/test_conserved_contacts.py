@@ -136,3 +136,39 @@ def test_leave_one_out_validate_includes_reliability(tmp_path):
     result = leave_one_out_validate(structures, top_k=(1,))
     assert result['reliability']['tier'] == 'low'
     assert 'note' in result['reliability']
+
+
+def test_mine_conserved_contacts_skips_a_structure_whose_interaction_detection_fails(tmp_path, monkeypatch):
+    """A structure can load fine (valid ligand and receptor files) and
+    still make ProLIF's own interaction detection crash -- found in
+    practice on a bound mercury ion, whose van der Waals radius ProLIF's
+    chosen radii table does not define. That must skip the one bad
+    structure and keep mining the rest, not take down the whole ensemble,
+    the same way a load failure is handled."""
+    import posegate.conserved_contacts as cc
+
+    structures = [_make_structure(tmp_path, f"s{i}", shift=(0, 0, 0)) for i in range(4)]
+    real_build_ifp = cc.build_ifp
+    poisoned_id = structures[1]['pdb_id']
+
+    def flaky_build_ifp(lig, rec):
+        # Identify the poisoned call by conformer position, since build_ifp
+        # itself doesn't receive pdb_id; the receptor position was set
+        # uniquely per structure by _make_structure's shift/offset pattern,
+        # but simplest here is to fail on the second call deterministically.
+        flaky_build_ifp.calls += 1
+        if flaky_build_ifp.calls == 2:
+            raise ValueError("van der Waals radius for atom 'Hg' not found")
+        return real_build_ifp(lig, rec)
+    flaky_build_ifp.calls = 0
+
+    monkeypatch.setattr(cc, 'build_ifp', flaky_build_ifp)
+    results = cc.mine_conserved_contacts(structures)
+
+    assert len(results) > 0
+    top = results[0]
+    # 3 of 4 structures actually contributed (one was skipped), so the
+    # conserved contact common to all of them still reads frequency 1.0
+    # against n_ensemble=3, not silently averaged in as if 4 had loaded.
+    assert top['n_ensemble'] == 3
+    assert top['frequency'] == 1.0

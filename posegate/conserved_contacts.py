@@ -126,8 +126,21 @@ def mine_conserved_contacts(structures: List[Dict[str, str]]) -> List[Dict[str, 
             skipped.append(s['pdb_id'])
             continue
 
+        # ProLIF's interaction detection can fail on a structure that
+        # loaded successfully -- e.g. VdWContact raises ValueError for an
+        # element its chosen radii table has no entry for, which real
+        # structures do contain (old-style heavy-atom phasing derivatives
+        # such as mercury or platinum, retained in the deposited
+        # coordinates even though they play no role in binding). Uncaught,
+        # this crashes mining for the whole ensemble over one structure;
+        # skipped and reported like a load failure instead.
+        try:
+            ifp = build_ifp(lig, rec)
+        except Exception as e:
+            skipped.append(f"{s['pdb_id']} (interaction detection failed: {e})")
+            continue
+
         n_valid += 1
-        ifp = build_ifp(lig, rec)
 
         # Count each (residue, interaction type) at most once per
         # structure, so a residue with many contacting atoms in one
@@ -189,12 +202,18 @@ def _top_k_predicted_residues(mined_rows: List[Dict[str, Any]], k: int,
 def _structure_contact_residues(structure: Dict[str, str]):
     """Residues a single structure's own ligand specifically contacts,
     computed directly rather than via mining. Returns None if the
-    structure fails to load."""
+    structure fails to load, or if it loads but ProLIF's own interaction
+    detection fails on it (see mine_conserved_contacts for why that is a
+    real, separate failure mode from a load failure -- a bound heavy atom
+    ProLIF's radii table has no entry for is the case actually seen)."""
     lig, rec = _load_structure(structure)
     if lig is None or rec is None:
         return None
 
-    ifp = build_ifp(lig, rec)
+    try:
+        ifp = build_ifp(lig, rec)
+    except Exception:
+        return None
     residues = set()
     for (_, pres), interactions in ifp.items():
         if SPECIFIC_INTERACTIONS.intersection(interactions):
