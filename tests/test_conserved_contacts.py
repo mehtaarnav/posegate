@@ -2,7 +2,9 @@
 import pytest
 from rdkit import Chem
 from rdkit.Chem import AllChem
-from posegate.conserved_contacts import mine_conserved_contacts, leave_one_out_validate
+from posegate.conserved_contacts import (
+    mine_conserved_contacts, leave_one_out_validate, ensemble_reliability
+)
 
 def _make_structure(tmp_path, name, shift):
     """A tiny synthetic 'structure': a methanol ligand H-bonding to a water
@@ -118,3 +120,19 @@ def test_leave_one_out_validate_handles_a_structure_that_fails_to_load(tmp_path)
     broken_fold = next(f for f in result['folds'] if f['pdb_id'] == 'broken')
     assert broken_fold['skipped'] is True
     assert result['accuracy'][1]['n_folds'] == 3
+
+
+def test_ensemble_reliability_matches_the_measured_threshold_boundaries():
+    assert ensemble_reliability(6)['tier'] == 'low'
+    assert ensemble_reliability(9)['tier'] == 'low'
+    assert ensemble_reliability(10)['tier'] == 'moderate'
+    assert ensemble_reliability(13)['tier'] == 'moderate'
+    assert ensemble_reliability(14)['tier'] == 'high'
+    assert ensemble_reliability(22)['tier'] == 'high'
+
+
+def test_leave_one_out_validate_includes_reliability(tmp_path):
+    structures = [_make_structure(tmp_path, f"s{i}", shift=(0, 0, 0)) for i in range(5)]
+    result = leave_one_out_validate(structures, top_k=(1,))
+    assert result['reliability']['tier'] == 'low'
+    assert 'note' in result['reliability']

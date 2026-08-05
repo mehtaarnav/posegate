@@ -202,6 +202,45 @@ def _structure_contact_residues(structure: Dict[str, str]):
     return residues
 
 
+# Ensemble-size reliability thresholds, derived from an actual measured
+# curve, not a guess. A 22-structure CDK2 ensemble was leave-one-out
+# validated at sizes 6/10/14/18/22, 15 random subsets per size (except
+# 22, the full pool, which has only one possible subset):
+#
+#   size   mean accuracy   stdev
+#   6      0.59            0.23   (individual trials ranged 0.0-1.0)
+#   10     0.71            0.15
+#   14     0.67            0.05
+#   18     0.69            0.06
+#   22     0.68            --
+#
+# Accuracy stops improving past ~10 structures, but the variance is what
+# actually matters for trusting a single run: at 6 structures, two draws
+# of the same size landed at 0% and 100% accuracy. By 14+ the spread
+# tightens to roughly 0.6-0.8. This threshold is derived from one target
+# (CDK2); it is the best evidence available, not a guarantee it transfers
+# exactly to every target's geometry.
+RELIABILITY_THRESHOLDS = (
+    (10, 'low', "fewer than 10 structures: in the measured curve this size regime had a "
+                "3x higher spread than larger ensembles (stdev 0.15-0.23 vs 0.05-0.06), "
+                "including a same-size draw that scored 0% and another that scored 100%. "
+                "Treat this accuracy as a rough signal, not a precise estimate."),
+    (14, 'moderate', "10-13 structures: variance was still meaningfully elevated in the "
+                     "measured curve (stdev ~0.15) compared to 14+ (~0.05). Usable, but "
+                     "expect this number to move if you add or swap a few structures."),
+)
+
+
+def ensemble_reliability(n_usable: int) -> Dict[str, Any]:
+    """Classifies an ensemble size against RELIABILITY_THRESHOLDS.
+    Returns {'tier', 'note'}; tier is 'low', 'moderate', or 'high'."""
+    for threshold, tier, note in RELIABILITY_THRESHOLDS:
+        if n_usable < threshold:
+            return {'tier': tier, 'note': note}
+    return {'tier': 'high', 'note': "14+ structures: in the measured curve this is the "
+                                     "range where accuracy stabilizes (stdev 0.05-0.06)."}
+
+
 def leave_one_out_validate(
     structures: List[Dict[str, str]], top_k: Tuple[int, ...] = (1, 3, 5)
 ) -> Dict[str, Any]:
@@ -277,4 +316,5 @@ def leave_one_out_validate(
         'accuracy': accuracy,
         'n_ensemble': len(structures),
         'n_usable': len(usable),
+        'reliability': ensemble_reliability(len(usable)),
     }

@@ -68,10 +68,9 @@ def main():
         if self_validation['n_usable'] < self_validation['n_ensemble']:
             skipped = self_validation['n_ensemble'] - self_validation['n_usable']
             print(f"({skipped} structure(s) skipped: failed to load)")
-        n_folds = self_validation['n_usable']
-        if n_folds <= 6:
-            print(f"Only {n_folds} usable folds: treat this accuracy as a rough signal, not a "
-                  f"precise estimate.")
+        reliability = self_validation['reliability']
+        print(f"\nEnsemble size reliability: {reliability['tier'].upper()}")
+        print(f"  {reliability['note']}")
 
     if args.out_json:
         with open(args.out_json, 'w') as f:

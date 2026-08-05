@@ -70,6 +70,32 @@ def warn_on_discarded_heterogens(pdb_path: str) -> None:
               f"and docked poses will not reflect its presence.")
 
 
+def _add_missing_atoms(fixer: PDBFixer, pdb_path: str) -> None:
+    """Wraps PDBFixer.addMissingAtoms(), which can crash with an opaque
+    internal AttributeError ('NoneType' object has no attribute
+    'topology') rather than a real error, when it needs to model a
+    missing residue for which it has no structural template -- this
+    happens on real structures with genuine disordered/missing loop
+    regions, not on anything wrong with the input. Left uncaught this
+    surfaces as a raw traceback into pdbfixer's own source, which is
+    unusable by a caller who does not know what PDBFixer is. Re-raised
+    here as a clear, actionable posegate-level error instead of patched
+    around: silently modeling past a real structural gap would risk
+    inventing geometry, and a genuinely missing loop can be part of the
+    binding site, so the safer default is to name the structure and let
+    the caller pick a different one for this target, not guess for them.
+    """
+    try:
+        fixer.addMissingAtoms()
+    except AttributeError as e:
+        raise ValueError(
+            f"PDBFixer could not model a missing/disordered region in {pdb_path} "
+            f"(internal error: {e}). This usually means the structure has a real gap "
+            f"PDBFixer has no template for, not a problem with your input. Try a "
+            f"different PDB entry for this target."
+        ) from e
+
+
 def pdb_atom_name(name: str) -> str:
     """Formats an atom name into PDB's 4-column field without truncating it.
 
@@ -182,7 +208,7 @@ def prepare_receptor_mol(pdb_path: str) -> Chem.Mol:
     fixer.removeHeterogens(keepWater=False)
     fixer.findMissingResidues()
     fixer.findMissingAtoms()
-    fixer.addMissingAtoms()
+    _add_missing_atoms(fixer, pdb_path)
     fixer.addMissingHydrogens(7.0)
 
     mol = Chem.RWMol()
@@ -286,7 +312,7 @@ def write_clean_receptor_pdb(pdb_path: str, out_path: str) -> str:
     fixer.removeHeterogens(keepWater=False)
     fixer.findMissingResidues()
     fixer.findMissingAtoms()
-    fixer.addMissingAtoms()
+    _add_missing_atoms(fixer, pdb_path)
     fixer.addMissingHydrogens(7.0)
     with open(out_path, 'w') as f:
         PDBFile.writeFile(fixer.topology, fixer.positions, f, keepIds=True)
