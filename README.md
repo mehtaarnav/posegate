@@ -41,11 +41,17 @@ transfer between targets. See [Validation](#validation) for both results in full
 - **Conserved-contact mining** (`posegate.conserved_contacts`) — the main component. Given several
   co-crystal structures of one target, each bound to a different ligand, reports which receptor
   contacts recur across ligands and at what frequency. This yields a pharmacophore constraint for
-  targets where the literature does not already provide one.
+  targets where the literature does not already provide one. Each frequency ships with a 95%
+  Wilson confidence interval, since a raw frequency alone doesn't say whether it came from a
+  6-structure or a 22-structure ensemble; `--exclude_vdw` on `run_conserved_contact_miner.py`
+  drops the van der Waals rows so only the specific interaction types (H-bonds, hydrophobic,
+  aromatic) are shown.
 - **Pose autopsy** (`posegate.autopsy`) — steric clashes, hydrogen-bond geometry, aromatic
-  contacts, and a checkable pharmacophore constraint (a named conserved H-bond, typically the one
-  the miner found), combined into a fitted score for ranking candidates within a batch. The
-  per-pose interaction report is reliable; the fitted ranking score is exploratory (see
+  contacts, geometric metal-coordination contacts (reporting-only; ProLIF has no coordination-bond
+  interaction type, so a retained Zn/Mg/Mn/Fe/etc. ion is checked directly by distance to nearby
+  ligand N/O/S atoms), and a checkable pharmacophore constraint (a named conserved H-bond,
+  typically the one the miner found), combined into a fitted score for ranking candidates within a
+  batch. The per-pose interaction report is reliable; the fitted ranking score is exploratory (see
   [Validation](#validation)).
 - **Docking orchestration** (`posegate.docking`) — AutoDock Vina wrapper with ligand-size-aware
   search boxes and restraint-guided pose selection (pick the best-scoring pose among several
@@ -157,11 +163,18 @@ regression, not hand-tuned) against that target's own mined pharmacophore:
 | HIV-1 protease | 225 | 75 | 0.72 | 0.77 |
 | Carbonic anhydrase | 261 | 87 | 0.25 | 0.79 |
 
+`scripts/bootstrap_stats.py` gives a 95% stratified-bootstrap confidence interval for any of
+these, e.g. `--score_col vina_score` for the raw-Vina column above instead of the default fitted
+`posegate_score` (this is how the BRD4 baseline's [0.49, 0.72] interval quoted in `paper.md` was
+produced).
+
 Fitted weight *magnitudes* are not comparable across targets at these sample sizes: with 64 to
 261 compounds per target the confidence intervals overlap too much for a pairwise AUC comparison
 to mean anything. What is comparable is each feature's *direction*. `scripts/compare_feature_weights.py`
-fits each target's weights on standardized features and bootstraps 200 resamples per target,
-reporting a feature's direction only when its sign is stable in at least 90% of resamples:
+fits each target's weights on standardized features inside a cross-validation pipeline (the
+scaler is refit on each fold's training data alone, not on the full dataset beforehand, so no
+test-fold statistics leak into training) and bootstraps 200 resamples per target, reporting a
+feature's direction only when its sign is stable in at least 90% of resamples:
 
 ```
 feature                       cdk2            brd4         eralpha             hiv              ca

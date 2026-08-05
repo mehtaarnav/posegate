@@ -125,9 +125,12 @@ constraint substituted for the feature that constraint checks. Raw-Vina baseline
 0.52 (CDK2) to 0.72 (estrogen receptor alpha), consistent with the target-dependent variance
 reported for docking generally [@trannguyen2020litpcba] rather than indicating a defect in any
 one setup. Fitted weights are not comparable in magnitude across targets at these sample sizes,
-so we compare the direction of each feature's association with activity instead, bootstrapped
-over 200 resamples per target and reported only when the sign is stable in at least 90% of them
-(`scripts/compare_feature_weights.py`). The mined conserved contact is the one feature whose
+so we compare the direction of each feature's association with activity instead, fitting each
+target's weights on standardized features (the scaler refit on each cross-validation fold's own
+training data rather than on the full dataset beforehand, so no test-fold statistics leak into
+training) and bootstrapped over 200 resamples per target, reported only when the sign is stable
+in at least 90% of them (`scripts/compare_feature_weights.py`). The mined conserved contact is
+the one feature whose
 direction holds across all five targets, with bootstrap sign stability between 0.94 and 1.00.
 Generic hydrogen-bond count and the raw docking score itself both reverse direction between
 targets. This is consistent with the miner, rather than the fitted score, being the component
