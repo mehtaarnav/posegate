@@ -35,6 +35,32 @@ from posegate.autopsy import build_ifp
 from posegate.receptor_prep import load_receptor_mol
 
 
+def _load_structure(structure: Dict[str, str]):
+    """Loads a structure's ligand and receptor, returning (None, None) on
+    any failure rather than letting a missing file's OSError propagate
+    differently from RDKit's own None-on-malformed-input convention.
+    Chem.MolFromMolFile raises OSError for a file that does not exist but
+    returns None for one that exists and fails to parse; every caller
+    here already treats a None ligand/receptor as 'skip this structure',
+    so an uncaught OSError previously crashed the whole ensemble instead
+    of skipping the one bad structure -- including every leave-one-out
+    fold whose *training* set happened to include it, not just a fold
+    that held it out directly."""
+    try:
+        lig = Chem.MolFromMolFile(structure['ligand_sdf'], removeHs=False)
+    except OSError:
+        lig = None
+    try:
+        receptor_path = structure['receptor_pdb']
+        if receptor_path.endswith('.pkl'):
+            rec = load_receptor_mol(receptor_path)
+        else:
+            rec = Chem.MolFromPDBFile(receptor_path, removeHs=False, proximityBonding=False)
+    except OSError:
+        rec = None
+    return lig, rec
+
+
 def wilson_interval(count: int, n: int, z: float = 1.96) -> Tuple[float, float]:
     """95%-default Wilson score interval for a binomial proportion.
 
@@ -95,12 +121,7 @@ def mine_conserved_contacts(structures: List[Dict[str, str]]) -> List[Dict[str, 
     skipped = []
 
     for s in structures:
-        lig = Chem.MolFromMolFile(s['ligand_sdf'], removeHs=False)
-        receptor_path = s['receptor_pdb']
-        if receptor_path.endswith('.pkl'):
-            rec = load_receptor_mol(receptor_path)
-        else:
-            rec = Chem.MolFromPDBFile(receptor_path, removeHs=False, proximityBonding=False)
+        lig, rec = _load_structure(s)
         if lig is None or rec is None:
             skipped.append(s['pdb_id'])
             continue
@@ -137,3 +158,123 @@ def mine_conserved_contacts(structures: List[Dict[str, str]]) -> List[Dict[str, 
         for (residue, interaction), count in counts.items()
     ]
     return sorted(results, key=lambda r: r['frequency'], reverse=True)
+
+
+# Interaction types specific enough to count as a real contact when
+# checking a held-out structure below, as opposed to VdWContact (see this
+# module's docstring on why that one is excluded by default elsewhere).
+SPECIFIC_INTERACTIONS = {
+    'HBDonor', 'HBAcceptor', 'Hydrophobic', 'FaceToFace', 'EdgeToFace', 'PiStacking'
+}
+
+
+def _top_k_predicted_residues(mined_rows: List[Dict[str, Any]], k: int,
+                               exclude_vdw: bool = True) -> List[str]:
+    """The miner's top-k distinct residues by descending frequency.
+    mined_rows is one (residue, interaction) row per line, already sorted;
+    this collapses to distinct residues, since a held-out check is
+    per-residue, not per-interaction-type."""
+    seen: List[str] = []
+    for row in mined_rows:
+        if exclude_vdw and row['interaction'] == 'VdWContact':
+            continue
+        residue = row['residue'].upper()
+        if residue not in seen:
+            seen.append(residue)
+        if len(seen) >= k:
+            break
+    return seen
+
+
+def _structure_contact_residues(structure: Dict[str, str]):
+    """Residues a single structure's own ligand specifically contacts,
+    computed directly rather than via mining. Returns None if the
+    structure fails to load."""
+    lig, rec = _load_structure(structure)
+    if lig is None or rec is None:
+        return None
+
+    ifp = build_ifp(lig, rec)
+    residues = set()
+    for (_, pres), interactions in ifp.items():
+        if SPECIFIC_INTERACTIONS.intersection(interactions):
+            residues.add(str(pres).upper())
+    return residues
+
+
+def leave_one_out_validate(
+    structures: List[Dict[str, str]], top_k: Tuple[int, ...] = (1, 3, 5)
+) -> Dict[str, Any]:
+    """Self-validates the miner on its own input ensemble. Needs no ground
+    truth beyond the ensemble the caller already supplied.
+
+    Every validation of the miner up to this point compared its output,
+    mined from an ensemble, against a literature pharmacophore known
+    before that ensemble was built -- a claim of agreement with prior
+    knowledge, and a circular one, since the answer was known in advance.
+    This asks a harder question that does not require knowing the answer
+    in advance: for each structure in the ensemble in turn, mine the
+    remaining N-1, take the miner's top-k predicted residues, and check
+    whether the held-out structure's own ligand actually contacts them.
+    The held-out structure was never seen by the fold that predicted it.
+
+    Because this only consumes the ensemble the caller already has, it
+    runs unchanged on a target with no known literature pharmacophore --
+    the exact situation the miner exists for -- and produces a confidence
+    number for *this* ensemble specifically, rather than an appeal to
+    validation performed on some other, previously studied target.
+    run_conserved_contact_miner.py runs this automatically on every
+    invocation for that reason (see --skip_self_validation there to opt
+    out on a very large ensemble, where it costs one extra full mining
+    pass per structure).
+
+    A prediction counts as a hit if the predicted residue shows any
+    specific (non-van-der-Waals) interaction with the held-out ligand --
+    the same residue, not necessarily the same interaction type, since
+    the interaction type recorded on the training folds is what informed
+    the prediction and need not match exactly what the held-out ligand's
+    own chemistry produces.
+
+    Returns a dict with 'folds' (one entry per structure, with its
+    held-out contacts, the miner's top-k predictions, and a hit/miss flag
+    per k) and 'accuracy' (per k: hit count, usable fold count, and
+    accuracy), plus 'n_ensemble' and 'n_usable' for structures that failed
+    to load and were skipped.
+    """
+    folds = []
+    for i, held in enumerate(structures):
+        train = structures[:i] + structures[i + 1:]
+        actual = _structure_contact_residues(held)
+        if actual is None:
+            folds.append({'pdb_id': held['pdb_id'], 'skipped': True})
+            continue
+
+        mined = mine_conserved_contacts(train)
+        fold: Dict[str, Any] = {
+            'pdb_id': held['pdb_id'],
+            'skipped': False,
+            'held_out_residues': sorted(actual),
+        }
+        for k in top_k:
+            predicted = _top_k_predicted_residues(mined, k)
+            fold[f'top{k}_predicted'] = predicted
+            fold[f'top{k}_hit'] = any(p in actual for p in predicted)
+        folds.append(fold)
+
+    usable = [f for f in folds if not f['skipped']]
+    accuracy = {}
+    for k in top_k:
+        hits = sum(f[f'top{k}_hit'] for f in usable)
+        n = len(usable)
+        accuracy[k] = {
+            'hits': hits,
+            'n_folds': n,
+            'accuracy': round(hits / n, 3) if n else None,
+        }
+
+    return {
+        'folds': folds,
+        'accuracy': accuracy,
+        'n_ensemble': len(structures),
+        'n_usable': len(usable),
+    }
