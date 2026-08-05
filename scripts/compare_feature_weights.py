@@ -147,16 +147,20 @@ def main():
         print(row)
 
         known = [s for s in signs if s != 0]
-        if len(known) < 2:
-            verdicts[f] = 'indeterminate (too few stable estimates)'
+        n_stable, n_total = len(known), len(results)
+        support = f"{n_stable}/{n_total} targets stable"
+        if n_stable < 2:
+            verdicts[f] = f'indeterminate ({support}, too few to compare)'
         elif len(set(known)) == 1:
-            verdicts[f] = 'consistent'
+            verdicts[f] = f'consistent ({support})'
         else:
-            verdicts[f] = 'REVERSES between targets'
+            verdicts[f] = f'REVERSES between targets ({support})'
 
     print("\nVerdict per feature:")
     for f in FEATURES:
         print(f"  {f:<18} {verdicts[f]}")
+    print("\nA verdict rests only on the targets whose sign was stable. 'consistent' on 2 of 5 "
+          "\nis far weaker evidence than 'consistent' on 5 of 5, so the support count is given.")
 
     print("\nBootstrap sign stability:")
     hdr = f"{'feature':<18}" + ''.join(f"{r['label']:>16}" for r in results)

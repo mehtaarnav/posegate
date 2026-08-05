@@ -142,36 +142,63 @@ We traced two representative disagreements to their causes, and neither is a det
   this homodimer with one aspartate engaged more closely than the other. Aggregated across the
   ensemble, the miner recovers the dyad from both chains.
 
-### Pose-ranking score (two targets, exploratory)
+### Pose-ranking score (five targets, exploratory)
 
-This component is evaluated on two targets rather than five, and is reported as a
-characterization of the approach's limits rather than as a validated screening method.
+This component is reported as a characterization of the approach's limits, not as a validated
+screening method. Each target has its own DUD-E-style property-matched benchmark and its own
+weights, fitted independently by `scripts/recalibrate_weights.py` (L2-regularized logistic
+regression, not hand-tuned) against that target's own mined pharmacophore:
 
-On a 65-compound BRD4 benchmark (22
-actives, 43 property-matched decoys), raw Vina score achieves AUC-ROC 0.53 (95% CI [0.37, 0.68]),
-indistinguishable from random at this sample size. `posegate`'s fitted `posegate_score`, whose
-weights come from L2-regularized logistic regression against this benchmark rather than from hand
-tuning (`scripts/recalibrate_weights.py`), reaches a cross-validated AUC-ROC of 0.62 on the
-target it was fitted on. Generic H-bond count receives a penalizing weight in that fit, because
-property-matched decoys form as many incidental H-bonds as actives, leaving the specific
-conserved contact as the discriminating feature.
+| Target | N | actives | raw Vina AUC | fitted AUC |
+|---|---|---|---|---|
+| CDK2 | 64 | 22 | 0.52 | 0.49 |
+| BRD4 | 90 | 30 | 0.60 | 0.63 |
+| Estrogen receptor alpha | 223 | 75 | 0.72 | 0.85 |
+| HIV-1 protease | 225 | 75 | 0.72 | 0.77 |
+| Carbonic anhydrase | 261 | 87 | 0.25 | 0.76 |
 
-Those fitted weights do not transfer to another target. Applying them unmodified to an equivalent
-51-compound CDK2 benchmark, with CDK2's Leu83 hinge contact substituted for BRD4's Asn140, gives
-AUC-ROC 0.35, below raw Vina's 0.37 on that benchmark. On CDK2, actives average more H-bonds than
-decoys (2.0 against 1.4), the opposite of the BRD4 pattern, so the BRD4-derived H-bond penalty
-acts against a signal that is genuine on CDK2. The conserved-contact-hit and clash-count features
-keep the same relationship to activity on both targets; generic H-bond count does not. Whether a
-feature predicts activity is therefore target-dependent, and weights should be refitted per
-target or restricted to mechanistically general features such as the conserved-contact hit.
+Fitted weight *magnitudes* are not comparable across targets at these sample sizes: with 64 to
+261 compounds per target the confidence intervals overlap too much for a pairwise AUC comparison
+to mean anything. What is comparable is each feature's *direction*. `scripts/compare_feature_weights.py`
+fits each target's weights on standardized features and bootstraps 200 resamples per target,
+reporting a feature's direction only when its sign is stable in at least 90% of resamples:
 
-Two targets cannot establish which feature types are target-general, and we don't claim more than
-that. The suggestive part is that the mined conserved contact is among the features that hold
-their direction on both targets, which is consistent with the miner being the component that
-generalizes. Extending this to the remaining three families is the natural next step:
-`scripts/fetch_benchmark_dataset.py` already takes any ChEMBL target ID, the refitting script
-takes any results CSV, and the miner has already supplied validated pharmacophores for all five.
-Full discussion in `paper.md`.
+```
+feature                       cdk2            brd4         eralpha             hiv              ca
+----------------------------------------------------------------------------------------------------
+conserved_hbond            +0.43           +0.73           +0.98           +0.45           +0.46
+hbond_count                 unstable        -0.54           +0.30           -0.35            unstable
+vina_score                   unstable        -0.61           -1.11           -0.49           +0.82
+```
+
+`conserved_hbond` is the one feature whose direction holds across all five targets (bootstrap
+sign stability 0.94–1.00). Generic H-bond count reverses between targets, as does the raw Vina
+score itself. This is consistent with the mined conserved contact, rather than the fitted score,
+being the component of `posegate` that generalizes across targets — the closest this project
+comes to a supported answer on that question, run on real docking rather than assumed.
+
+**Carbonic anhydrase is worth a closer look, because its raw-Vina baseline of 0.25 means Vina**
+**ranked actives *worse* than decoys on average, yet its mined Thr199 contact still discriminated**
+**correctly.** We checked whether this was a bug in our own zinc handling before writing it up.
+Docked poses place carbonic anhydrase inhibitors 1.4–2.9 Å from the catalytic zinc, consistent
+with genuine coordination, against 1.8–4.2 Å for decoys — so pose selection is finding the
+correct site. The zinc carries zero partial charge in the prepared receptor, and
+[AutoDock Vina's own documentation](https://autodock-vina.readthedocs.io/en/latest/docking_zinc.html)
+states that it disregards atomic charges on metal ions during scoring; the
+[AutoDock4Zn](https://doi.org/10.1021/ci500209e) extension exists specifically to address this,
+and we are not using it. Vina's raw score is unreliable here by a documented limitation of the
+scoring function, not a defect in `posegate.receptor_prep`, and it is a clean illustration of why
+a feature that doesn't depend on that score is useful.
+
+Two limitations bound how far these results should be read. First, property-matched decoys carry
+[analogue and decoy bias that a fitted model can learn in place of genuine protein-ligand
+interaction](https://doi.org/10.1371/journal.pone.0220113); the fitted AUCs above are an upper
+bound until validated against a bias-corrected benchmark such as
+[LIT-PCBA](https://doi.org/10.1021/acs.jcim.0c00155). This bounds the fitted weights only, not
+the miner, which uses no decoys. Second, per-target variance in raw docking performance (0.25 to
+0.72 here) is expected rather than a sign of a broken setup — on LIT-PCBA even consensus scoring
+fails to enrich on several of fifteen targets. Full discussion, including the metal-retention and
+class-imbalance fixes this required, in `paper.md`.
 
 ## Design notes
 

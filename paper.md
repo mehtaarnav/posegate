@@ -47,9 +47,9 @@ several ligand-bound structures already in the PDB, which collectively contain t
 PDB entries and their bound ligands.
 
 The downstream motivation is that raw docking score is a weak discriminator. On this project's
-65-compound BRD4 benchmark (22 literature actives, 43 DUD-E-style property-matched decoys), raw
-Vina score separates actives from decoys with an AUC-ROC of 0.53 (95% stratified-bootstrap CI
-[0.37, 0.68]), not distinguishable from random at this sample size. Whether a pose makes a
+90-compound BRD4 benchmark (30 literature actives, 60 DUD-E-style property-matched decoys), raw
+Vina score separates actives from decoys with an AUC-ROC of 0.60 (95% stratified-bootstrap CI
+[0.49, 0.72]), not clearly distinguishable from random at this sample size. Whether a pose makes a
 specific, mechanistically meaningful contact is a more direct question, and the pose-triage
 component checks exactly that. The intended audience is researchers working on a target with no
 established literature pharmacophore, and those running structure-based screens who want
@@ -119,32 +119,42 @@ output, with disagreement concentrated in PLIP's tail of looser calls; two repre
 disagreements trace to a ProLIF angle cutoff and to a real per-structure asymmetry rather than to
 detection errors, and the README gives both diagnoses in full.
 
-The pose-triage component is evaluated on two targets rather than five. Its fitted score reaches
-a cross-validated AUC-ROC of 0.62 against a raw-Vina baseline of 0.53 on the BRD4 benchmark it
-was fitted on. Applied unmodified to an equivalent 51-compound CDK2 benchmark, with CDK2's mined
-Leu83 contact substituted for Asn140, it gives 0.35 against a raw-Vina baseline of 0.37, so the
-weights do not transfer. The cause is a sign reversal in one feature: generic hydrogen-bond count
-is penalized on BRD4, where property-matched decoys form more incidental hydrogen bonds than
-actives, but is a genuine positive signal on CDK2, where actives form more. The mined conserved
-contact and the clash count keep their direction on both targets. Two targets cannot establish
-which feature types are target-general and we claim no more than that, but the mined constraint
-being among the features that hold is consistent with the miner, rather than the fitted score,
-being the component that generalizes. Equivalent benchmarks on the remaining three families are
-the natural next step.
+We fitted the pose-triage score independently on each of the five families, each with its own
+DUD-E-style property-matched benchmark (64 to 261 compounds) and its own mined pharmacophore
+constraint substituted for the feature that constraint checks. Raw-Vina baselines ranged from
+0.52 (CDK2) to 0.72 (estrogen receptor alpha), consistent with the target-dependent variance
+reported for docking generally [@trannguyen2020litpcba] rather than indicating a defect in any
+one setup. Fitted weights are not comparable in magnitude across targets at these sample sizes,
+so we compare the direction of each feature's association with activity instead, bootstrapped
+over 200 resamples per target and reported only when the sign is stable in at least 90% of them
+(`scripts/compare_feature_weights.py`). The mined conserved contact is the one feature whose
+direction holds across all five targets, with bootstrap sign stability between 0.94 and 1.00.
+Generic hydrogen-bond count and the raw docking score itself both reverse direction between
+targets. This is consistent with the miner, rather than the fitted score, being the component
+of `posegate` that generalizes across targets, and is the strongest evidence for that available
+from this study.
 
-Two limitations bound how far the pose-triage results should be read. First, these benchmarks use
-property-matched decoys in the style of DUD-E [@mysinger2012dude], and decoy sets built that way
-carry analogue and decoy bias that a fitted model can learn in place of learning protein-ligand
-interaction: Chen et al. [@chen2019hiddenbias] traced deep-learning enrichment on DUD-E to
-exactly that artifact rather than to generalization. Any margin our fitted score shows over the
-raw docking baseline should therefore be treated as an upper bound, and confirming it would
-require a benchmark built to avoid these biases, such as LIT-PCBA [@trannguyen2020litpcba]. The
-caveat applies to the fitted weights and not to the miner, which uses no decoys at all. Second,
-docking performance is known to vary sharply between targets, to the point that on LIT-PCBA even
-consensus scoring fails to enrich on several of fifteen targets. Our raw-docking baselines span
-AUC-ROC 0.52 to 0.72 across targets, which is consistent with that literature rather than
-indicative of a defect in any one setup, and is why we report per-target results rather than an
-average.
+Carbonic anhydrase is a useful illustration of why. Its raw-Vina baseline was 0.25, meaning Vina
+ranked actives *worse* than decoys on average, yet its mined Thr199 contact still discriminated
+correctly (bootstrap-stable at 1.00). We traced the inversion rather than treating it as noise:
+docked poses place carbonic anhydrase inhibitors 1.4-2.9 Angstrom from the catalytic zinc,
+consistent with genuine metal coordination, against 1.8-4.2 Angstrom for decoys, so pose
+selection is finding the correct site. The zinc ion carries zero partial charge in the prepared
+receptor, and AutoDock Vina's own documentation states that it disregards atomic charges on
+metal ions during scoring; the AutoDock4Zn extension exists specifically to address this
+[@santosmartins2014autodock4zn], and we did not use it here. Vina's raw score for this target is
+therefore unreliable by a documented limitation of the scoring function, not a defect in our
+receptor preparation, and the conserved-contact feature discriminates correctly regardless,
+because it does not depend on that score.
+
+Two further limitations bound how far the pose-triage results should be read. Property-matched
+decoy sets in the style of DUD-E [@mysinger2012dude] carry analogue and decoy bias that a fitted
+model can learn in place of learning protein-ligand interaction: Chen et al.
+[@chen2019hiddenbias] traced deep-learning enrichment on DUD-E to exactly that artifact rather
+than to generalization. Any margin our fitted scores show over their raw-docking baselines
+should therefore be treated as an upper bound, and confirming it would require a benchmark built
+to avoid these biases, such as LIT-PCBA [@trannguyen2020litpcba]. This caveat applies to the
+fitted weights and not to the miner, which uses no decoys at all.
 
 # Acknowledgements
 
