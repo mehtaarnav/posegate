@@ -19,145 +19,135 @@ bibliography: paper.bib
 
 # Summary
 
-`posegate` is a Python toolkit whose primary component is a conserved-contact miner. Given an
-ensemble of one target's co-crystal structures, each bound to a chemically distinct ligand, it
-aggregates ProLIF interaction fingerprints [@bouysset2021prolif] and reports which receptor
-contacts recur across the ensemble and at what frequency. This yields a target-specific
-pharmacophore constraint for targets where the literature does not already supply one. The miner
-was evaluated on five protein families with unrelated folds, cross-checked against PLIP
-[@salentin2015plip], and compared against the published results of visGReMLIN
-[@ribeiro2020visgremlin], the closest existing tool.
+`posegate` is a Python toolkit for structure-based drug discovery. Its main component mines a
+target's own deposited protein structures to find which receptor contacts its known binders
+share, without requiring any prior knowledge of that target. Its second component checks docked
+poses against that constraint and ranks them accordingly.
 
-A second component applies the mined constraint to docked poses. It wraps AutoDock Vina
-[@eberhardt2021autodockvina], reports the clashes, hydrogen bonds and aromatic contacts each pose
-makes and whether it satisfies the conserved contact, and combines these into a score fitted
-against labeled data. That score's ranking performance is modest and does not transfer between
-targets; we report it as a characterization of the approach's limits rather than as a validated
-screening method.
+Structure-based screening asks whether a candidate molecule's docked pose looks like a real
+binder's. Answering that well requires a pharmacophore: a specific receptor contact, such as a
+hydrogen bond to a named residue, that genuine binders are known to make. For a well-studied
+target this pharmacophore comes from published literature. For a less-studied target it usually
+does not exist yet, and working it out by hand requires exactly the domain expertise a researcher
+new to that target lacks. `posegate`'s miner solves this by extracting the pharmacophore directly
+from data: given several structures of one target, each bound to a different ligand, it reports
+which receptor contacts recur across them, using [ProLIF](https://github.com/chemosim-lab/ProLIF)
+[@bouysset2021prolif] to detect interactions and PDBFixer/OpenMM to prepare each receptor. A
+second component applies the resulting constraint to poses from
+[AutoDock Vina](https://github.com/ccsb-scripps/AutoDock-Vina) [@eberhardt2021autodockvina],
+reporting whether a pose satisfies it and combining that with other pose features into a fitted
+ranking score.
 
 # Statement of need
 
-Interaction-aware analysis of docked poses requires a target-specific pharmacophore to check
-against: a named receptor contact that genuine binders are expected to make. For well-studied
-targets this comes from the literature, as we initially took BRD4's Asn140 contact. For a
-less-studied target it is often unavailable, and identifying one from the structural literature
-is precisely the expertise a newcomer to that target lacks. Many such targets nonetheless have
-several ligand-bound structures already in the PDB, which collectively contain the answer.
-`posegate`'s miner extracts it, requiring no prior knowledge of the target beyond a list of its
-PDB entries and their bound ligands.
-
-The downstream motivation is that raw docking score is a weak discriminator. On this project's
-90-compound BRD4 benchmark (30 literature actives, 60 DUD-E-style property-matched decoys), raw
-Vina score separates actives from decoys with an AUC-ROC of 0.60 (95% stratified-bootstrap CI
-[0.49, 0.72]), not clearly distinguishable from random at this sample size. Whether a pose makes a
-specific, mechanistically meaningful contact is a more direct question, and the pose-triage
-component checks exactly that. The intended audience is researchers working on a target with no
-established literature pharmacophore, and those running structure-based screens who want
-per-pose interaction detail behind a docking score.
+Researchers running a structure-based screen on a target with no established literature
+pharmacophore currently have two options: read the structural literature closely enough to
+identify one by hand, or screen without one and rely on docking score alone. The first requires
+expertise specific to that target; the second is weak. On a 90-compound BRD4 benchmark built for
+this project, raw Vina score separated known actives from property-matched decoys with an AUC-ROC
+of 0.60 (95% bootstrap CI [0.49, 0.72]) — not clearly better than chance at this sample size.
+`posegate` gives such a researcher a third option: point the miner at the target's own PDB
+entries and derive the pharmacophore from the structures that already exist. The intended
+audience is researchers screening a target without a known pharmacophore, and researchers who
+want per-pose interaction detail behind a docking score rather than the score alone.
 
 # State of the field
 
-Rescoring docked poses by the interactions they make, rather than by the docking score alone, is
-an established approach. Structural interaction fingerprints [@deng2004sift] encode a pose's
-contacts as a bit string for comparison against known complexes, and SPLIF [@da2014splif] uses
-that comparison to recover actives that the docking score alone would reject. `posegate`'s
-restraint-guided pose selection is the same idea applied at selection time rather than after it:
-among the poses Vina returns, prefer one that satisfies a required contact. What differs is where
-the required contact comes from. These methods take a reference complex, or a pharmacophore
-supplied by the user, as given; `posegate` derives it by mining the target's own deposited
-structures, which is what makes it applicable to a target whose reference pharmacophore has not
-been established.
+PoseBusters [@buttenschoen2024posebusters] checks whether a pose is chemically and physically
+plausible — bond lengths, ring geometry, clashes — but not whether it engages the right target
+interactions; the two tools answer different questions and can be used together. Errington et al.
+[@errington2024assessing] measure how closely a predicted pose reproduces a known reference pose's
+interactions, which requires that reference pose as ground truth. `posegate` addresses the more
+common case where no reference pose exists. ParaDockS [@meier2010paradocks] proposed the same
+underlying idea `posegate`'s miner implements, over a decade ago, but its source has had no
+commits since 2015 and is not an installable package.
 
-`posegate` occupies a narrow scope relative to several other tools. PoseBusters
-[@buttenschoen2024posebusters] checks a pose's chemical and physical plausibility but not
-target-specific interaction recovery, so the two are complementary. Errington et al.
-[@errington2024assessing] introduced a ProLIF-based metric for how closely a predicted pose
-reproduces a known reference pose, which requires ground truth, whereas `posegate` addresses the
-screening case where none exists. ParaDockS [@meier2010paradocks] proposed the same idea the
-miner implements over a decade ago, but its source has had no commits since 2015 and is not an
-installable package. FTMap [@kozakov2015ftmap] and Fragment Hotspot Maps [@radoux2016fragment]
-locate hot spots on a single structure, by probe docking and by a model built from the Cambridge
-Structural Database, requiring much heavier infrastructure for a different question.
-
-visGReMLIN [@ribeiro2020visgremlin] is the closest direct comparator, taking the same input but
-mining conserved 3D motifs by graph pattern mining rather than by per-residue frequency
-aggregation. It was released only as a web server, without source code, and both advertised URLs
-are currently unreachable, so we compared against its published CDK case study instead
-(`scripts/compare_visgremlin.py`). Of the 26 binding-site atoms of Schonbrunn et al., spanning 9
-residues, visGReMLIN recovered 18 atoms across 8 residues; on a 22-structure CDK2 ensemble
-`posegate`'s miner reports contacts at all 9 residues, or 8 of 9 counting only
-non-van-der-Waals interactions, missing the same residue visGReMLIN missed, HIS84. The hinge
-residue PHE82, which visGReMLIN recovers through an aromatic motif, is recovered here as a
-hydrophobic contact rather than as pi-stacking. The scores are not directly comparable, since
-visGReMLIN's is atom-level over 73 complexes. The comparison also showed that ensemble
-composition matters more than size: adding 14 structures from one fragment-screen series removed
-ASP145 from the output entirely. The README reports both results in full.
+visGReMLIN [@ribeiro2020visgremlin] is the closest existing tool: it takes the same input, an
+ensemble of one target's structures each bound to a different ligand, and identifies conserved
+motifs by graph mining rather than by the frequency-based approach used here. It was released
+only as a web server, and neither of its advertised URLs currently resolves, so we could not run
+it directly; we instead compared against the results it published for its own CDK case study. Of
+26 reference binding-site atoms spanning 9 residues, visGReMLIN reported 18 atoms across 8
+residues; `posegate`'s miner, applied to a 22-structure CDK2 ensemble, reports all 9 residues, and
+8 of 9 when restricted to specific (non-van-der-Waals) contacts — missing the same residue
+visGReMLIN missed. The two scores are not directly comparable, since visGReMLIN's is atom-level
+over 73 complexes and `posegate` has no atom-level output, but the result indicates the
+lighter-weight method reaches the same conclusion. FTMap [@kozakov2015ftmap] and Fragment Hotspot
+Maps [@radoux2016fragment] locate druggable hot spots on a single structure via probe docking or
+a statistical model, respectively; both require substantially heavier infrastructure to answer a
+different question than the one `posegate` asks of structures that already exist in the PDB.
 
 # Software design
 
-Interaction detection is centralized on ProLIF rather than implemented directly. Receptor bond
-perception proved to be a correctness risk rather than a formality: RDKit's native PDB parser
-supplements template-based bonding with a distance-based heuristic that can introduce spurious
-bonds at tight turns, and with that heuristic disabled its residue-template matcher can leave
-most of a chain unbonded without reporting an error, as we observed on an unremarkable structure
-where only the first two residues of 298 were bonded. `posegate.receptor_prep` therefore builds
-the receptor molecule from PDBFixer/OpenMM's `Topology.bonds()` rather than inferring
-connectivity from PDB text. Docking adds a ligand-size-aware search box and restraint-guided pose
-selection, since Vina has no restraint term; the README documents both.
+Interaction detection is centralized on ProLIF rather than computed by hand, which was the
+project's original approach; this both simplified the code and gave access to a wider,
+independently maintained set of interaction definitions. Receptor preparation turned out to carry
+real correctness risk. RDKit's native PDB bond perception either invents spurious bonds at tight
+turns or, with that heuristic disabled, silently fails to bond most of a multi-residue chain.
+`posegate.receptor_prep` avoids both failure modes by building the receptor molecule directly from
+PDBFixer/OpenMM's own computed bonds. Those bonds carry no order, so nothing in a prepared
+receptor is aromatic unless assigned explicitly; `receptor_prep` assigns it from residue templates
+for the standard aromatic side chains, which is what allows pi-stacking to be detected at all.
+Catalytic metal ions are retained rather than stripped, since a metalloenzyme's ligand may bind by
+coordinating one directly; because no interaction-fingerprinting library models a coordination
+bond as such, that contact is instead reported geometrically, by distance, alongside the
+fingerprint-derived ones.
+
+Docking wraps AutoDock Vina with a search box sized to each ligand's own extent, since a fixed box
+across a chemically diverse library causes clashes for larger ligands. Vina's scoring function has
+no restraint term, so `posegate` requests several candidate poses per ligand and selects the
+best-scoring one that satisfies the mined constraint, falling back to the top-ranked pose when
+none does. Ligands are docked concurrently across a process pool, since Vina's own internal
+threading scales sublinearly and independent worker processes make better use of many cores.
 
 # Research impact statement
 
-`posegate` has not yet been used in a published research study. In all five protein families
-tested, the conserved-contact miner recovered the established literature pharmacophore with no
-target-specific knowledge hardcoded: BRD4's Asn140 acetyl-lysine-mimetic contact, CDK2's Leu83
-hinge hydrogen bond, estrogen receptor alpha's Glu353/Arg394 charge clamp, HIV-1 protease's
-Asp25/Asp25' catalytic dyad, recovered symmetrically from both chains of this obligate homodimer,
-and carbonic anhydrase's Thr199 gatekeeper hydrogen bond. Cross-checking against PLIP
-[@salentin2015plip] placed the literature-validated residue in the agreement set in every family.
-Agreement across all conserved residues was recall 0.32 and precision 0.71 against PLIP's broader
-output, with disagreement concentrated in PLIP's tail of looser calls; two representative
-disagreements trace to a ProLIF angle cutoff and to a real per-structure asymmetry rather than to
-detection errors, and the README gives both diagnoses in full.
+`posegate` has not yet been used in a published study; the evidence here is from validating it
+directly. The miner was tested on five protein families with unrelated folds and different
+pharmacophore chemistries — BRD4, CDK2, estrogen receptor alpha, HIV-1 protease, and carbonic
+anhydrase — and recovered the literature-established pharmacophore in all five, with no
+target-specific knowledge built into the code. An independent interaction detector, PLIP
+[@salentin2015plip], placed that same literature residue in agreement with `posegate` in every
+family.
 
-We fitted the pose-triage score independently on each of the five families, each with its own
-DUD-E-style property-matched benchmark (64 to 261 compounds) and its own mined pharmacophore
-constraint substituted for the feature that constraint checks. Raw-Vina baselines ranged from
-0.52 (CDK2) to 0.72 (estrogen receptor alpha), consistent with the target-dependent variance
-reported for docking generally [@trannguyen2020litpcba] rather than indicating a defect in any
-one setup. Fitted weights are not comparable in magnitude across targets at these sample sizes,
-so we compare the direction of each feature's association with activity instead, fitting each
-target's weights on standardized features (the scaler refit on each cross-validation fold's own
-training data rather than on the full dataset beforehand, so no test-fold statistics leak into
-training) and bootstrapped over 200 resamples per target, reported only when the sign is stable
-in at least 90% of them (`scripts/compare_feature_weights.py`). The mined conserved contact is
-the one feature whose
-direction holds across all five targets, with bootstrap sign stability between 0.94 and 1.00.
-Generic hydrogen-bond count and the raw docking score itself both reverse direction between
-targets. This is consistent with the miner, rather than the fitted score, being the component
-of `posegate` that generalizes across targets, and is the strongest evidence for that available
-from this study.
+The pose-ranking component is weaker evidence and is reported as such. Fitted on each target's own
+benchmark, its cross-validated AUC-ROC improves on the raw-Vina baseline for four of the five
+targets and is flat on the fifth (CDK2). Raw-Vina baselines themselves range from 0.25 to 0.72
+across targets, a spread consistent with docking performance being known to vary sharply by
+target rather than indicating a defect in any one setup. Because confidence intervals at these
+sample sizes overlap too much for a pairwise AUC comparison across targets to mean anything, we
+instead compare the *direction* of each feature's association with activity, bootstrapped over
+200 resamples per target: the mined conserved contact is the only feature whose direction holds
+across all five targets, while generic hydrogen-bond count and the raw Vina score itself both
+reverse between targets. Carbonic anhydrase makes the case concretely. Its raw-Vina baseline is
+inverted — actives score worse than decoys on average — because Vina's scoring function has no
+term for metal coordination and its zinc-binding inhibitors depend on exactly that; docked poses
+still place those inhibitors correctly, 1.4–2.9 Å from the catalytic zinc, and the mined contact
+still discriminates correctly despite the unreliable raw score. Taken together, this is evidence
+that the miner's output, not the fitted score, is the part of `posegate` that generalizes across
+targets.
 
-Carbonic anhydrase is a useful illustration of why. Its raw-Vina baseline was 0.25, meaning Vina
-ranked actives *worse* than decoys on average, yet its mined Thr199 contact still discriminated
-correctly (bootstrap-stable at 1.00). We traced the inversion rather than treating it as noise:
-docked poses place carbonic anhydrase inhibitors 1.4-2.9 Angstrom from the catalytic zinc,
-consistent with genuine metal coordination, against 1.8-4.2 Angstrom for decoys, so pose
-selection is finding the correct site. The zinc ion carries zero partial charge in the prepared
-receptor, and AutoDock Vina's own documentation states that it disregards atomic charges on
-metal ions during scoring; the AutoDock4Zn extension exists specifically to address this
-[@santosmartins2014autodock4zn], and we did not use it here. Vina's raw score for this target is
-therefore unreliable by a documented limitation of the scoring function, not a defect in our
-receptor preparation, and the conserved-contact feature discriminates correctly regardless,
-because it does not depend on that score.
+Two caveats bound these results. The benchmarks use property-matched decoys in the style of
+DUD-E [@mysinger2012dude], which are known to carry bias a fitted model can learn in place of
+genuine interaction signal [@chen2019hiddenbias]; the fitted-score margins above should be read as
+an upper bound pending validation on a bias-corrected benchmark such as LIT-PCBA
+[@trannguyen2020litpcba]. This caveat does not apply to the miner, which uses no decoys.
 
-Two further limitations bound how far the pose-triage results should be read. Property-matched
-decoy sets in the style of DUD-E [@mysinger2012dude] carry analogue and decoy bias that a fitted
-model can learn in place of learning protein-ligand interaction: Chen et al.
-[@chen2019hiddenbias] traced deep-learning enrichment on DUD-E to exactly that artifact rather
-than to generalization. Any margin our fitted scores show over their raw-docking baselines
-should therefore be treated as an upper bound, and confirming it would require a benchmark built
-to avoid these biases, such as LIT-PCBA [@trannguyen2020litpcba]. This caveat applies to the
-fitted weights and not to the miner, which uses no decoys at all.
+# AI usage disclosure
+
+Generative AI (Claude, Anthropic) was used throughout this project's development, under direct
+human direction and with human review and correction at each step. The author made all target,
+scope, and methodological decisions: which protein families to validate against, which
+comparators to include, what counts as sufficient evidence for a claim, and where a result should
+be reported as exploratory rather than established. The AI executed implementation and debugging
+under that direction — including the receptor-preparation fixes described above, the benchmark
+and docking pipeline, and diagnosis of several defects found during validation (among them, an
+aromaticity-detection gap that made pi-stacking unreportable on any structure, and a
+differential-dropout bug in ligand preparation that was silently biasing benchmark composition) —
+and drafted most of the software's documentation and this paper's prose, revised repeatedly under
+author direction. All reported results were produced by running the project's own code and are
+reproducible from the repository; the final paper and codebase were reviewed and verified by the
+author before submission.
 
 # Acknowledgements
 
