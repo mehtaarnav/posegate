@@ -4,7 +4,18 @@ conserved contact back. No manifest to hand-build, no ligand resname to
 look up, no WSL-specific orchestration script.
 
     python scripts/mine_target.py --pdb_ids 4FKL 1GZ8 5JQ5 3EZR 3WBL \
-        --out_dir data/my_target
+        --out_dir data/my_target --uniprot_acc P00533
+
+--uniprot_acc is required, not optional: found directly on ERalpha that a
+keyword-based candidate ID list can silently pull in structures of a
+different protein (ERbeta, ERR-gamma both slipped into an "ERalpha" list
+this way), and that even genuine same-protein depositions can use
+inconsistent author residue numbering across entries -- both of which
+corrupt mining without ever raising an error. Every fetched structure is
+checked against this accession via SIFTS and remapped onto consistent
+UniProt numbering before mining; a structure that maps to a different
+accession, or that SIFTS has no mapping for, is rejected rather than
+silently pooled in wrong. See posegate.residue_mapping.
 
 Everything else this project has done so far -- the five-family
 validation, the visGReMLIN comparison, the LOO self-validation -- was
@@ -94,6 +105,17 @@ def main():
     parser.add_argument("--out_dir", required=True)
     parser.add_argument("--top_n", type=int, default=10)
     parser.add_argument("--skip_self_validation", action="store_true")
+    parser.add_argument("--uniprot_acc", required=True,
+                         help="UniProt accession (e.g. P03372) every --pdb_ids entry is expected "
+                              "to be. Required, not optional: found directly on ERalpha that a "
+                              "keyword-based candidate ID list can silently include structures of "
+                              "a different protein entirely (ERbeta, ERR-gamma both slipped into "
+                              "an 'ERalpha' list), and that even genuine ERalpha depositions use "
+                              "inconsistent author residue numbering across entries -- both of "
+                              "which silently corrupt mining without ever raising an error. Every "
+                              "fetched structure is checked against this accession via SIFTS and "
+                              "remapped onto its numbering before mining; a structure that maps to "
+                              "a different accession is rejected, not silently pooled in wrong.")
     args = parser.parse_args()
 
     os.makedirs(args.out_dir, exist_ok=True)
@@ -116,7 +138,8 @@ def main():
               f"docstring on how this is guessed)")
 
         try:
-            prepped.append(prep_structure(pdb_id, raw_path, ligand_resname, args.out_dir))
+            prepped.append(prep_structure(pdb_id, raw_path, ligand_resname, args.out_dir,
+                                           uniprot_acc=args.uniprot_acc))
         except Exception as e:
             print(f"  FAILED to prep: {e}")
 

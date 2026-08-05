@@ -10,6 +10,7 @@ import json
 import subprocess
 
 from posegate.receptor_prep import prepare_receptor_pickle
+from posegate.residue_mapping import build_residue_map, remap_residue_numbers
 
 
 def extract_single_ligand_instance(pdb_path: str, resname: str, out_path: str) -> tuple:
@@ -65,7 +66,8 @@ def chains_near_ligand(pdb_path: str, ligand_atom_positions: list, cutoff: float
     return chains
 
 
-def prep_structure(pdb_id: str, pdb_path: str, ligand_resname: str, out_dir: str) -> dict:
+def prep_structure(pdb_id: str, pdb_path: str, ligand_resname: str, out_dir: str,
+                    uniprot_acc: str = None) -> dict:
     ligand_raw = f"{out_dir}/{pdb_id}_ligand_raw.pdb"
     ligand_sdf = f"{out_dir}/{pdb_id}_ligand_h.sdf"
     receptor_input = f"{out_dir}/{pdb_id}_receptor_input.pdb"
@@ -93,6 +95,22 @@ def prep_structure(pdb_id: str, pdb_path: str, ligand_resname: str, out_dir: str
                     fout.write(line)
             else:
                 fout.write(line)
+
+    if uniprot_acc:
+        # Author residue numbers are not comparable across independent
+        # PDB depositions (different construct boundaries/isoforms can
+        # give the same author number to different physical residues --
+        # see posegate.residue_mapping's docstring for the ERalpha case
+        # that motivated this). Remap onto UniProt numbering, which is
+        # consistent across every structure of the same protein, before
+        # this receptor is ever mined.
+        residue_map = build_residue_map(pdb_id, uniprot_acc)
+        remapped_path = f"{out_dir}/{pdb_id}_receptor_input_remapped.pdb"
+        n_remapped = remap_residue_numbers(receptor_input, remapped_path, residue_map)
+        if n_remapped == 0:
+            raise ValueError(f"{pdb_id}: SIFTS mapping to {uniprot_acc} matched 0 receptor atoms "
+                              f"-- chain ID mismatch or wrong accession, refusing to mine unmapped")
+        receptor_input = remapped_path
 
     prepare_receptor_pickle(receptor_input, receptor_pkl)
 

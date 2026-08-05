@@ -22,6 +22,7 @@ dependencies = [
     "vina",
     "openmm",
     "pdbfixer",
+    "requests",
 ]
 # openbabel is also required (used via CLI in posegate.docking) but has no
 # pip-installable Python wheel with the CLI bundled; install it via conda
