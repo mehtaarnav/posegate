@@ -7,13 +7,13 @@ tags:
   - drug discovery
   - structural biology
 authors:
-  - name: TODO Author Name
-    orcid: TODO
+  - name: Arnav Mehta
+    orcid: 0009-0008-1688-6906
     affiliation: 1
 affiliations:
-  - name: TODO Affiliation
+  - name: Independent Researcher
     index: 1
-date: TODO
+date: 03 August 2026
 bibliography: paper.bib
 ---
 
