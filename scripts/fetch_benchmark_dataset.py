@@ -1,10 +1,10 @@
 # posegate/scripts/fetch_benchmark_dataset.py
-"""Generalized version of fetch_brd4_dataset.py: fetches real actives from
-ChEMBL for any target + DUD-E-style property-matched decoys, parameterized
-by target_chembl_id rather than hardcoded to BRD4. Used for the
-transferability study (scripts/recalibrate_weights.py's fitted weights
-were calibrated only on BRD4; this builds equivalent benchmarks for other
-targets to test whether those weights generalize)."""
+"""Fetches real actives from ChEMBL for any target, plus DUD-E-style
+property-matched decoys, parameterized by target_chembl_id. Used to build
+the benchmark for each of the five validated targets, so
+scripts/recalibrate_weights.py's fitted weights can be compared across
+them (see the cross-target feature-weight comparison in
+scripts/compare_feature_weights.py)."""
 
 import argparse
 import os
