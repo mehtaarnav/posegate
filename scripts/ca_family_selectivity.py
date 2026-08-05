@@ -12,6 +12,24 @@ comparative: which conserved-contact residues are shared across all
 three isoforms (the pan-CA catalytic scaffold), and which are specific
 to one isoform (selectivity-relevant candidates)?
 
+Verification status of this run's specific top-N output (checked against
+independent literature, not just self-consistency -- see conversation):
+  - CA2-ref 130 (raw UniProt numbering; classical "CA II numbering" 131):
+    CONFIRMED. Phe in CA2, Val in CA9 -- matches PMC7534198's documented
+    F131V CA IX-selectivity mechanism exactly, including the classical-
+    numbering +1 offset from raw UniProt indexing used throughout this
+    module.
+  - CA2-ref 131 (classical 132): CONFIRMED. Gly in CA2, Asp in CA9 --
+    matches published hCA II/hCA IX active-site rim literature ("Gly in
+    hCA II and Asp in hCA IX" at this position) exactly.
+  - CA2-ref 200 (classical 201, CA12-unique candidate): NOT confirmed.
+    Literature places Pro201/Pro202 as part of the broadly conserved
+    hydrophilic rim, present in CA9's active site too -- not a CA12-
+    specific feature. Consistent with this module's own data: the
+    residue is Pro in both CA2 and CA12 (no chemical divergence at all),
+    so its appearance in the "unique to CA12" bucket here is a frequency-
+    ranking artifact, not a real selectivity signal.
+
 Residue numbers are NOT comparable across these three proteins directly
 -- CA9 carries an N-terminal PG domain the others lack, so its catalytic
 domain residues sit at a different absolute number even at the same
