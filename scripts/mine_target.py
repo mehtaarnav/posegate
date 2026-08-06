@@ -64,6 +64,34 @@ LIKELY_NON_LIGAND = {
     # than just producing a nonsensical result.
     'HG', 'PT', 'AU', 'AG', 'OS', 'IR', 'PD', 'W', 'RE', 'SM', 'GD', 'YB',
     'TB', 'EU', 'LU', 'PB', 'U', 'TH', 'HO',
+    # Prosthetic-group cofactors: permanently bound, structural/catalytic
+    # (e.g. heme's iron enables COX's peroxidase activity), not the
+    # orthosteric small-molecule ligand a conserved-contact analysis
+    # cares about -- and, being large, heavy-atom-count residues, they
+    # beat real drug-like ligands under the "largest HETATM residue"
+    # heuristic. Found the hard way: HEM (heme B) was picked as "the
+    # ligand" for every COX-1 structure in this ensemble (COX is a
+    # heme-dependent bifunctional peroxidase/cyclooxygenase), crashing
+    # the whole run outright when RDKit/obabel couldn't cleanly convert
+    # heme's porphyrin ring system through the ligand-prep pipeline.
+    'HEM', 'HEC', 'HEA', 'HEB', 'HEG', 'DHE', 'HDD', 'FAD', 'FMN', 'NAD',
+    'NAP', 'NDP', 'FES', 'SF4', 'F3S', 'BCL', 'CLA', 'PLP',
+    # Heme-derivative variants (metal-substituted or metal-free
+    # porphyrin) found the same way as HEM itself on COX-1, a heme-
+    # dependent peroxidase: COH (metal-free protoporphyrin IX), MNH
+    # (manganese-reconstituted protoporphyrin IX, used in some COX
+    # structures to trap a distinct catalytic state).
+    'COH', 'MNH', 'PP9', 'DDH',
+    # Detergents used to solubilize membrane-associated proteins for
+    # crystallization (COX is membrane-associated) -- structurally
+    # present in the crystal but not a drug-like orthosteric ligand.
+    'BOG', 'LDA', 'OGA', 'HTG', 'C8E', 'DDQ', 'LMT', 'NG6',
+    # N/O-linked glycosylation sugars: present on essentially every
+    # secreted or membrane glycoprotein (e.g. COX-2), not a drug ligand.
+    # Found the same way on ERalpha earlier this session (see
+    # conversation) and again here on COX-2, where NAG outcompeted the
+    # real bound inhibitor/substrate by atom count in 3 of 7 structures.
+    'NAG', 'MAN', 'BMA', 'FUC', 'GAL', 'NDG', 'NGA', 'SIA', 'XYP',
 }
 
 
