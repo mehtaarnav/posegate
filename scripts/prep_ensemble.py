@@ -13,6 +13,32 @@ from posegate.receptor_prep import prepare_receptor_pickle
 from posegate.residue_mapping import build_residue_map, remap_residue_numbers
 
 
+def run_obabel(ligand_raw: str, ligand_sdf: str) -> None:
+    """Wraps the obabel CLI call with an actionable error message. obabel
+    has no pip-installable wheel bundling the CLI (see pyproject.toml's
+    comment), so on a fresh environment built purely from `pip install .`
+    it is silently absent -- found via an actual clean-environment test
+    (see conversation), where the resulting bare
+    subprocess.CalledProcessError ("returned non-zero exit status 127")
+    gave no indication obabel was even the problem, let alone what to do
+    about it. Exit code 127 specifically means 'command not found' in a
+    shell -- not obvious to anyone who doesn't already know that
+    convention, which is exactly the audience this message is for."""
+    try:
+        subprocess.run(f"obabel {ligand_raw} -O {ligand_sdf} -h", shell=True,
+                        check=True, capture_output=True)
+    except subprocess.CalledProcessError as e:
+        if e.returncode == 127:
+            raise RuntimeError(
+                "obabel (the Open Babel CLI) was not found. It has no pip-installable "
+                "wheel bundling the command-line tool, so `pip install .` alone does not "
+                "provide it -- install it separately via `conda install -c conda-forge "
+                "openbabel` or your system package manager (e.g. `apt install openbabel`), "
+                "then retry.") from e
+        raise RuntimeError(f"obabel failed converting {ligand_raw} to SDF: "
+                            f"{e.stderr.decode(errors='replace')[:500]}") from e
+
+
 def extract_single_ligand_instance(pdb_path: str, resname: str, out_path: str) -> tuple:
     """Extracts exactly one instance of the ligand (the asymmetric unit
     often contains multiple copies of the same complex; grabbing every
@@ -137,7 +163,7 @@ def prep_structure(pdb_id: str, pdb_path: str, ligand_resname: str, out_dir: str
     if n_atoms == 0:
         raise ValueError(f"No HETATM records found for resname {ligand_resname} in {pdb_path}")
 
-    subprocess.run(f"obabel {ligand_raw} -O {ligand_sdf} -h", shell=True, check=True, capture_output=True)
+    run_obabel(ligand_raw, ligand_sdf)
 
     ligand_positions = []
     with open(ligand_raw) as f:
