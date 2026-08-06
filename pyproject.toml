@@ -23,6 +23,7 @@ dependencies = [
     "openmm",
     "pdbfixer",
     "requests",
+    "biopython",
 ]
 # openbabel is also required (used via CLI in posegate.docking) but has no
 # pip-installable Python wheel with the CLI bundled; install it via conda

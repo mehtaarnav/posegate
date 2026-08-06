@@ -32,6 +32,7 @@ reported per structure so a wrong guess is visible, not silent.
 import argparse
 import json
 import os
+from datetime import datetime, timezone
 
 import requests
 
@@ -172,9 +173,18 @@ def main():
         print(f"\nEnsemble size reliability: {reliability['tier'].upper()}")
         print(f"  {reliability['note']}")
 
+    provenance = {
+        'requested_pdb_ids': args.pdb_ids,
+        'prepped_pdb_ids': [s['pdb_id'] for s in prepped],
+        'uniprot_acc': args.uniprot_acc,
+        'top_n': args.top_n,
+        'generated_at_utc': datetime.now(timezone.utc).isoformat(),
+    }
+
     out_json = os.path.join(args.out_dir, 'mined_result.json')
     with open(out_json, 'w') as f:
-        json.dump({'mined': results, 'self_validation': self_validation}, f, indent=2)
+        json.dump({'provenance': provenance, 'mined': results,
+                    'self_validation': self_validation}, f, indent=2)
     print(f"\nWrote {out_json}")
 
 
