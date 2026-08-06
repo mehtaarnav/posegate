@@ -66,6 +66,21 @@ def chains_near_ligand(pdb_path: str, ligand_atom_positions: list, cutoff: float
     return chains
 
 
+def filter_chains(pdb_path: str, keep_chains: set, out_path: str) -> None:
+    """Writes only the ATOM/HETATM/TER records belonging to keep_chains,
+    passing every other line (headers, etc.) through unchanged. TER is
+    chain-scoped like ATOM/HETATM, not a passthrough header line -- see
+    prep_structure's docstring note for why a dropped chain's TER record
+    must be dropped too, not written through unconditionally."""
+    with open(pdb_path) as fin, open(out_path, 'w') as fout:
+        for line in fin:
+            if line.startswith(('ATOM', 'HETATM', 'TER')):
+                if line[21] in keep_chains:
+                    fout.write(line)
+            else:
+                fout.write(line)
+
+
 def prep_structure(pdb_id: str, pdb_path: str, ligand_resname: str, out_dir: str,
                     uniprot_acc: str = None) -> dict:
     ligand_raw = f"{out_dir}/{pdb_id}_ligand_raw.pdb"
@@ -88,13 +103,13 @@ def prep_structure(pdb_id: str, pdb_path: str, ligand_resname: str, out_dir: str
     # Restrict the receptor to chains actually near this ligand instance
     # (protein chains forming its binding site, not solvent/other-copy
     # chains far away), rather than the ligand's own nominal chain alone.
-    with open(pdb_path) as fin, open(receptor_input, 'w') as fout:
-        for line in fin:
-            if line.startswith(('ATOM', 'HETATM')):
-                if line[21] in keep_chains:
-                    fout.write(line)
-            else:
-                fout.write(line)
+    # Found the hard way on chymotrypsin (a 3-chain, sometimes multi-copy-
+    # per-asymmetric-unit deposition): an earlier version of filter_chains
+    # wrote every non-ATOM/HETATM line through unconditionally, including
+    # a filtered-out chain's own TER record, which crashes OpenMM's PDB
+    # parser outright ('_current_chain' is None when it tries to close a
+    # chain that was never opened).
+    filter_chains(pdb_path, keep_chains, receptor_input)
 
     if uniprot_acc:
         # Author residue numbers are not comparable across independent
