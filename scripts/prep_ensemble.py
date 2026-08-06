@@ -81,6 +81,51 @@ def filter_chains(pdb_path: str, keep_chains: set, out_path: str) -> None:
                 fout.write(line)
 
 
+def chain_residue_sequences(pdb_path: str) -> dict:
+    """{chain_id: [three-letter residue names, in file order]}, one
+    entry per distinct (chain, resnum) instance, from ATOM records."""
+    seqs: dict = {}
+    seen = set()
+    with open(pdb_path) as f:
+        for line in f:
+            if not line.startswith('ATOM'):
+                continue
+            chain, resnum = line[21], line[22:26]
+            key = (chain, resnum)
+            if key in seen:
+                continue
+            seen.add(key)
+            seqs.setdefault(chain, []).append(line[17:20].strip())
+    return seqs
+
+
+def is_asymmetric_multichain(pdb_path: str, keep_chains: set) -> bool:
+    """True if keep_chains has more than one chain AND those chains are
+    NOT identical in sequence -- e.g. chymotrypsin's A/B/C, three
+    different fragments of one proteolytically-cleaved polypeptide, as
+    opposed to a true symmetric multimer (e.g. HIV protease's homodimer,
+    both chains identical), where any cross-chain residue-label mixing
+    is harmless because the chains are interchangeable.
+
+    Found the hard way: chymotrypsin's ensemble mined an unusable signal
+    (0% LOO, singleton frequencies) because different PDB depositions
+    apparently assign chain letters to its three non-identical fragments
+    inconsistently, fragmenting the same physical residue's identity
+    across the ensemble the same way the ERalpha numbering bug fragmented
+    it across depositions of a single-chain protein -- just at the chain
+    level instead of the residue-number level. Nothing in this pipeline
+    currently corrects for that, so this is a detector, not a fix: it
+    flags the risk so a caller (mine_target.py) can warn loudly instead
+    of silently reporting a plausible-looking but untrustworthy result.
+    """
+    seqs = chain_residue_sequences(pdb_path)
+    relevant = [seqs[c] for c in keep_chains if c in seqs]
+    if len(relevant) <= 1:
+        return False
+    first = relevant[0]
+    return not all(s == first for s in relevant[1:])
+
+
 def prep_structure(pdb_id: str, pdb_path: str, ligand_resname: str, out_dir: str,
                     uniprot_acc: str = None) -> dict:
     ligand_raw = f"{out_dir}/{pdb_id}_ligand_raw.pdb"
@@ -99,6 +144,7 @@ def prep_structure(pdb_id: str, pdb_path: str, ligand_resname: str, out_dir: str
         for line in f:
             ligand_positions.append([float(line[30:38]), float(line[38:46]), float(line[46:54])])
     keep_chains = chains_near_ligand(pdb_path, ligand_positions)
+    asymmetric = is_asymmetric_multichain(pdb_path, keep_chains)
 
     # Restrict the receptor to chains actually near this ligand instance
     # (protein chains forming its binding site, not solvent/other-copy
@@ -129,7 +175,8 @@ def prep_structure(pdb_id: str, pdb_path: str, ligand_resname: str, out_dir: str
 
     prepare_receptor_pickle(receptor_input, receptor_pkl)
 
-    return {'pdb_id': pdb_id, 'ligand_sdf': ligand_sdf, 'receptor_pdb': receptor_pkl}
+    return {'pdb_id': pdb_id, 'ligand_sdf': ligand_sdf, 'receptor_pdb': receptor_pkl,
+            'asymmetric_multichain': asymmetric}
 
 
 def main():

@@ -3,7 +3,7 @@ import sys
 import os
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'scripts'))
-from prep_ensemble import filter_chains
+from prep_ensemble import filter_chains, chain_residue_sequences, is_asymmetric_multichain
 
 
 def test_filter_chains_drops_ter_records_for_filtered_out_chains(tmp_path):
@@ -50,3 +50,54 @@ def test_filter_chains_keeps_multiple_requested_chains(tmp_path):
     lines = pdb_out.read_text().splitlines()
     chains_present = {l[21] for l in lines if l.startswith(('ATOM', 'TER'))}
     assert chains_present == {'A', 'C'}
+
+
+def _residue_line(chain, resnum, resname, serial=1):
+    return (f"ATOM  {serial:>5}  CA  {resname} {chain}{resnum:>4}      "
+            f"0.000   0.000   0.000  1.00  0.00           C\n")
+
+
+def test_is_asymmetric_multichain_false_for_a_true_symmetric_homodimer(tmp_path):
+    """HIV protease's homodimer: both chains identical sequence -- any
+    cross-chain residue-label mixing is harmless, must NOT be flagged."""
+    pdb = tmp_path / "homodimer.pdb"
+    lines = []
+    for i, resname in enumerate(['ALA', 'GLY', 'SER'], start=1):
+        lines.append(_residue_line('A', i, resname))
+        lines.append(_residue_line('B', i, resname))
+    pdb.write_text(''.join(lines))
+
+    assert is_asymmetric_multichain(str(pdb), keep_chains={'A', 'B'}) is False
+
+
+def test_is_asymmetric_multichain_true_for_non_identical_chains(tmp_path):
+    """Chymotrypsin-like: three non-identical fragments of one cleaved
+    polypeptide -- must be flagged, this is the real risk case."""
+    pdb = tmp_path / "chymotrypsin_like.pdb"
+    lines = [
+        _residue_line('A', 1, 'ILE'), _residue_line('A', 2, 'VAL'),
+        _residue_line('B', 1, 'GLY'), _residue_line('B', 2, 'GLY'),
+        _residue_line('C', 1, 'SER'), _residue_line('C', 2, 'ASP'),
+    ]
+    pdb.write_text(''.join(lines))
+
+    assert is_asymmetric_multichain(str(pdb), keep_chains={'A', 'B', 'C'}) is True
+
+
+def test_is_asymmetric_multichain_false_for_a_single_chain(tmp_path):
+    """CA2/CDK2-like: one chain near the ligand -- nothing to be
+    inconsistent with, must NOT be flagged."""
+    pdb = tmp_path / "single_chain.pdb"
+    pdb.write_text(_residue_line('A', 1, 'ALA') + _residue_line('A', 2, 'GLY'))
+
+    assert is_asymmetric_multichain(str(pdb), keep_chains={'A'}) is False
+
+
+def test_chain_residue_sequences_dedupes_repeated_atoms_of_one_residue(tmp_path):
+    pdb = tmp_path / "in.pdb"
+    pdb.write_text(
+        _residue_line('A', 1, 'ALA', serial=1) +
+        _residue_line('A', 1, 'ALA', serial=2)  # second atom, same residue
+    )
+    seqs = chain_residue_sequences(str(pdb))
+    assert seqs == {'A': ['ALA']}

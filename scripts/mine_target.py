@@ -148,6 +148,21 @@ def main():
     if len(prepped) < 2:
         raise SystemExit("Need at least 2 successfully prepped structures to mine anything.")
 
+    asymmetric_ids = [s['pdb_id'] for s in prepped if s.get('asymmetric_multichain')]
+    if asymmetric_ids:
+        print(f"\n{'!'*70}")
+        print(f"UNSUPPORTED TARGET CLASS WARNING: {len(asymmetric_ids)}/{len(prepped)} structure(s) "
+              f"have a receptor with multiple, non-identical chains near the ligand: {asymmetric_ids}")
+        print("This pipeline has no mechanism to verify chain-letter assignment is consistent "
+              "for a non-symmetric multi-chain protein across different PDB depositions -- found "
+              "on chymotrypsin (three fragments of one cleaved polypeptide), where inconsistent "
+              "chain labeling fragmented the same physical residue's identity across the ensemble "
+              "and produced an unusable signal (0% self-validation accuracy) despite looking like "
+              "a normal run. A true symmetric multimer (e.g. HIV protease's homodimer, both chains "
+              "identical) does not have this problem and is not flagged here.")
+        print("Results below should be treated as UNVERIFIED for this reason, not just low-confidence.")
+        print(f"{'!'*70}")
+
     print(f"\nMining conserved contacts across {len(prepped)} structures...")
     results = mine_conserved_contacts(prepped)
     specific = [r for r in results if r['interaction'] != 'VdWContact']
@@ -179,6 +194,8 @@ def main():
         'uniprot_acc': args.uniprot_acc,
         'top_n': args.top_n,
         'generated_at_utc': datetime.now(timezone.utc).isoformat(),
+        'asymmetric_multichain_structures': asymmetric_ids,
+        'unsupported_target_class': bool(asymmetric_ids),
     }
 
     out_json = os.path.join(args.out_dir, 'mined_result.json')
