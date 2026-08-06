@@ -106,9 +106,69 @@ def fetch_pdb(pdb_id: str, out_dir: str) -> str:
     return path
 
 
+# Above this many PDB entries containing a given chemical component
+# anywhere, it's treated as a crystallization additive/cofactor/glycan
+# rather than a specific bound ligand, regardless of atom count. Set
+# from a real observed sample (see global_pdb_prevalence's docstring):
+# known additives ranged 515-28155 entries, known real ligands 6-94 --
+# 200 sits cleanly between them with margin on both sides.
+PREVALENCE_THRESHOLD = 200
+_prevalence_cache: dict = {}
+
+
+def global_pdb_prevalence(comp_id: str, timeout: int = 15) -> int:
+    """How many PDB entries contain this chemical component anywhere,
+    queried live from RCSB. A drug-like ligand specific to one binding
+    site appears in a handful of entries; a crystallization additive,
+    cofactor, or glycosylation sugar appears in hundreds to tens of
+    thousands, essentially regardless of the protein. This is the
+    general, self-updating replacement for LIKELY_NON_LIGAND's manually-
+    curated list, which cannot cover every contaminant class in advance
+    -- three different classes (heme cofactors, detergents, glycans)
+    each needed their own hand-added entries this session before this
+    function existed, and there is no reason a fourth, unseen class
+    wouldn't need one too, indefinitely, without this fix.
+
+    Verified on a real sample: HEM 6493, NAG 12288, SO4 28155, GOL 26103,
+    BOG 515 entries, versus real bound ligands CEL 6, STU 94, IBP 14 --
+    a wide, clean separation (see conversation).
+
+    Cached per process (an ensemble mines the same handful of comp_ids
+    repeatedly). Returns -1, not an exception, if the query fails --
+    callers should treat that as 'unknown' and fail open (allow the
+    candidate) rather than block a whole run over a network hiccup.
+    """
+    if comp_id in _prevalence_cache:
+        return _prevalence_cache[comp_id]
+    try:
+        query = {
+            'query': {'type': 'terminal', 'service': 'text', 'parameters': {
+                'attribute': 'rcsb_nonpolymer_instance_annotation.comp_id',
+                'operator': 'exact_match', 'value': comp_id}},
+            'return_type': 'entry',
+            'request_options': {'return_counts': True},
+        }
+        resp = requests.post('https://search.rcsb.org/rcsbsearch/v2/query',
+                              json=query, timeout=timeout)
+        if resp.status_code == 204:
+            count = 0
+        else:
+            resp.raise_for_status()
+            count = resp.json().get('total_count', -1)
+    except requests.RequestException:
+        count = -1
+    _prevalence_cache[comp_id] = count
+    return count
+
+
 def detect_ligand_resname(pdb_path: str):
-    """The largest (by atom count) non-junk HETATM residue instance in
-    the file. Returns None if nothing qualifies."""
+    """The largest (by atom count) HETATM residue instance in the file
+    that is neither a known non-ligand (LIKELY_NON_LIGAND, a fast
+    offline first pass for the most common, already-catalogued cases)
+    nor globally common across the whole PDB (global_pdb_prevalence,
+    checked live -- see its docstring for why this generalizes beyond
+    what LIKELY_NON_LIGAND can cover). Returns None if nothing qualifies.
+    """
     counts = {}
     with open(pdb_path) as f:
         for line in f:
@@ -121,11 +181,22 @@ def detect_ligand_resname(pdb_path: str):
             counts[key] = counts.get(key, 0) + 1
     if not counts:
         return None
-    # Largest single residue instance, not summed across chains/copies:
-    # a resname repeated across many small crystallographic copies should
-    # not outrank one real, larger, single bound ligand.
-    (resname, _, _), _ = max(counts.items(), key=lambda kv: kv[1])
-    return resname
+
+    # Largest single residue instance per resname, not summed across
+    # chains/copies -- a resname repeated across many small
+    # crystallographic copies should not outrank one real, larger,
+    # single bound ligand.
+    best_per_resname: dict = {}
+    for (resname, _, _), n in counts.items():
+        best_per_resname[resname] = max(best_per_resname.get(resname, 0), n)
+
+    for resname, _ in sorted(best_per_resname.items(), key=lambda kv: -kv[1]):
+        prevalence = global_pdb_prevalence(resname)
+        # prevalence == -1 means the query failed (network issue, not a
+        # verdict) -- fail open rather than block the whole run.
+        if prevalence == -1 or prevalence <= PREVALENCE_THRESHOLD:
+            return resname
+    return None
 
 
 def main():
