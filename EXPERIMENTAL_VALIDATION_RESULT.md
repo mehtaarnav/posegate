@@ -105,3 +105,35 @@ than against literature derived from the same structures. That capability
 did not exist before this, and its first use returned an unfavourable
 answer about the project's own headline claim — which is the point of
 building it.
+
+
+## Why the test failed: variance decomposition
+
+Run over 38,151 paired ChEMBL measurements across the same 21 isoform
+pairs, asking whether selectivity is a property of the protein pair or
+of the ligand:
+
+| source | share of variance |
+|---|---|
+| **within pairs (ligand-driven)** | **74.5%** |
+| between pairs (protein-driven) | 25.5% |
+
+Mean within-pair sd is 1.04 log units against 0.58 for the spread of
+pair medians. For a single fixed pair such as CA2/CA9 the 5th-95th
+percentile of dpKi runs -1.53 to +1.73 -- 30-fold selective one way to
+50-fold the other, determined entirely by which compound is chosen. In
+every pair, 19-55% of compounds reach at least 10-fold selectivity.
+
+**Selectivity is a ligand property conditioned on the protein pair, not
+a property of the pair.** The main test collapsed each pair to a median
+and therefore discarded 74.5% of the variance by construction. It was
+not merely underpowered; it measured the minority component.
+
+This does not rehabilitate the failed prediction -- a pair-level
+predictor genuinely cannot work, which is itself the finding. But it
+identifies the missing ingredient precisely: the tool characterises
+protein-side divergence and never conditions on which ligand chemistry
+is present to exploit it.
+
+Note also that 25.5% is not zero. The protein side carries real signal;
+it simply cannot be assessed without ligand conditioning.
