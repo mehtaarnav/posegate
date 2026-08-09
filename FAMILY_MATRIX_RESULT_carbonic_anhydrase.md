@@ -49,17 +49,69 @@ because CA1 was not in that comparison.** Widening from three isoforms
 to seven surfaced a real determinant that the narrower view structurally
 could not reach.
 
-## Novel candidates, unvalidated
+## Position 91: checked against literature, CONFIRMED
 
-Position **91** is the most variable contact position in the family --
-six distinct amino acids across seven isoforms (F/T/R/I/K/K/L), mined as
-a top-10 contact by CA1, CA13 and CA4. Nothing in this project has
-checked it against literature. It is the obvious first candidate if this
-analysis were to be pushed further, and it is stated here as a lead, not
-a result.
+Position 91 was flagged by this matrix as the most variable contact
+position in the family -- six distinct amino acids across seven isoforms
+(F/T/R/I/K/K/L) -- purely from structural mining, with no literature
+input. It was recorded here as an unvalidated lead and then checked.
 
-Positions 19, 20, 134, 121, 140 and 259 are likewise variable and
-unvalidated.
+Verified against the primary source (Probing the Surface of Human
+Carbonic Anhydrase for Clues towards the Design of Isoform Specific
+Inhibitors, PMC4355338), which states:
+
+- "Residue positions 67, 91, and 131 establish this region termed the
+  *selective pocket*"
+- "Residues at position 91 seem to have the highest variability, in
+  terms of specific residues type and between amino acid properties
+  (i.e., hydrophilicity/hydrophobicity) between isoforms"
+- "Position 91 can be termed a 'hot-spot' for the design of isoform
+  specific inhibitors"
+- Its Table 3 lists CA II as carrying **Isoleucine** at position 91,
+  matching this matrix's CA2 cell exactly.
+
+This is a stronger form of agreement than the earlier confirmations,
+which were presence/absence. Here the matrix's own ranking metric --
+count of distinct amino acids across the family -- independently
+reproduced the literature's characterization of position 91 as *the*
+highest-variability position in the CA active site, and ranked it first
+of ten without being told what to look for.
+
+Coverage of the literature-defined selective pocket (classical
+positions 67, 91, 131) is partial and stated as such: the matrix
+recovered 91 and 131 (the latter as its position 130; see the numbering
+note below) but **missed 67**, which was not a top-10 contact in any
+isoform.
+
+### A numbering trap worth recording
+
+The classical-to-raw offset in this family is NOT constant. Five
+independent anchors (Gln92, His94, His96, His119, Val121) confirm offset
+0 in the 90-121 region, so raw 91 = classical 91. But raw 130 =
+classical 131 and raw 199 = classical 200, an offset of +1 further along
+-- there is an insertion between. Any comparison against CA literature
+numbers has to be calibrated locally, exactly as the trypsin hold-out
+required (see HOLDOUT_RESULT_trypsin_chymotrypsin.md, where assuming a
+uniform offset produced a false negative).
+
+### A source-reliability trap worth recording
+
+The first literature search on position 91 returned a confident summary
+asserting "CA I has Ile91 while CA II has Phe91" -- the reverse of what
+this matrix found. Fetching the paper it cited (PMC12914371) showed that
+claim is **not in that paper at all**; its only mention of position 91 is
+an engineered "I91L" CA IX mimic variant, not an isoform comparison. The
+matrix was right and the summary was fabricated. The direct sequence
+alignment settled it independently (CA2 Ile91 aligns to CA1 Phe92, with
+clean flanking matches L-L, Q-Q, F-F, H-H on both sides), and the
+correct assignment was later corroborated by PMC4355338's Table 3.
+Search summaries were treated as leads requiring a primary source, not
+as evidence.
+
+## Other novel candidates, still unvalidated
+
+Positions 19, 20, 134, 121, 140 and 259 are variable and have not been
+checked against literature.
 
 ## Limitations
 
