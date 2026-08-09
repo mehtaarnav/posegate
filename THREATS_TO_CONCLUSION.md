@@ -127,3 +127,38 @@ families. Threat D is a framing problem: the evidence supports
 "systematizes and ranks what the structural record already encodes"
 much more strongly than it supports "discovers what nobody knew."
 Threat C may be permanent.
+
+
+## Post-mortem: the ensemble-QC pivot, checked and closed
+
+After development stopped, one pivot looked strong enough to check: drop
+selectivity, keep the machinery that WAS validated, and reframe as a
+structural-ensemble QC tool -- verify that a set of PDB structures are
+the same protein, consistently numbered, correctly ligand-assigned and
+internally coherent, before anyone trains a model or runs ensemble
+docking on them. Every one of those failures bit this project, on
+extremely well-studied proteins.
+
+Checked before committing to it. It is occupied:
+
+- **PDBCleanV2** (bioRxiv 2025.02.14.638326) "compares the sequences of
+  all chains in each structure to a set of reference sequences" and
+  "standardizes chain names and numbering", explicitly rectifying
+  "mislabeling errors from original structure submission to the PDB".
+  That is the ERalpha identity contamination and the CA13 chain-letter
+  split, both handled -- by MUSCLE alignment against reference sequences
+  rather than SIFTS lookup, but to the same effect.
+- **LP-PDBBind** and **PDBbind CleanSplit** (Nat Mach Intell 2025)
+  already address structure-dataset contamination and train/test leakage
+  for the ML use case.
+- **wwPDB OneDep** covers per-structure validation.
+
+The only remaining differentiator would be the ground-truth-free
+leave-one-out coherence signal, which is narrow and only meaningful for
+contact mining specifically. Not a product.
+
+That makes five ideas checked across this project -- JOSS eligibility,
+the curated-database coverage gap, resistance prediction, selectivity
+prediction, ensemble QC -- and five that came back occupied, confounded
+or falsified. Four of the five could have been checked in under an hour
+BEFORE building. That is the single most expensive lesson here.
