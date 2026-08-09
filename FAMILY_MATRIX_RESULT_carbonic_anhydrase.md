@@ -108,10 +108,37 @@ correct assignment was later corroborated by PMC4355338's Table 3.
 Search summaries were treated as leads requiring a primary source, not
 as evidence.
 
+
+## Positions 134 and 19: checked against literature
+
+**Position 134 (classical Val135): CONFIRMED, and completely.** The
+literature states a design rule with explicit per-isoform residues:
+"directing steric/hydrophobic bulk into the 130s subpocket (which
+includes Val135 in CA II) exploits differences between isoforms, where
+CA II has Phe131/Gly132/Val135 versus CA IX has Val131/Asp132/Leu135 and
+CA XII has Ala131/Ser132/Ser135."
+
+Against this matrix (raw 130/131/134 = classical 131/132/135), all nine
+cells match exactly -- CA2 F/G/V, CA9 V/D/L, CA12 A/S/S. The matrix
+independently reproduced a published three-residue subpocket design rule
+in full, and ranked all three positions inside its top-10 variable list.
+
+**Position 19 (classical Asp19): NOT CONFIRMED.** No source describes it
+as an active-site or selectivity-relevant residue. Recorded as a false
+positive. It is also the only checked candidate that was mined by a
+single isoform (CA2 alone); every confirmed candidate except classical
+132 was mined by three or more. That is a weak signal on n=4, not a rule,
+but it is the obvious thing to test if a credibility filter is ever
+added.
+
+Running tally of candidates checked: 91 confirmed, 130 confirmed, 131
+confirmed, 134 confirmed, 199 confirmed, 19 false positive. All flagged
+candidates were checked and all outcomes are reported, negative included.
+
 ## Other novel candidates, still unvalidated
 
-Positions 19, 20, 134, 121, 140 and 259 are variable and have not been
-checked against literature.
+Positions 20, 121, 140 and 259 are variable and have not been checked
+against literature.
 
 ## Limitations
 
