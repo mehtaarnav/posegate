@@ -145,10 +145,14 @@ def mine_conserved_contacts(structures: List[Dict[str, str]]) -> List[Dict[str, 
         # Count each (residue, interaction type) at most once per
         # structure, so a residue with many contacting atoms in one
         # structure doesn't outweigh a residue seen across many structures.
+        # The chain identifier is collapsed out of the label first (see
+        # collapse_chain) so equivalent copies of one physical residue
+        # aren't counted as separate residues across depositions that
+        # lettered their chains differently.
         seen_this_structure = set()
         for (_, pres), interactions in ifp.items():
             for iname in interactions:
-                key = (str(pres), iname)
+                key = (collapse_chain(str(pres)), iname)
                 seen_this_structure.add(key)
         for key in seen_this_structure:
             counts[key] += 1
@@ -179,6 +183,36 @@ def mine_conserved_contacts(structures: List[Dict[str, str]]) -> List[Dict[str, 
 SPECIFIC_INTERACTIONS = {
     'HBDonor', 'HBAcceptor', 'Hydrophobic', 'FaceToFace', 'EdgeToFace', 'PiStacking'
 }
+
+
+def collapse_chain(residue_label: str) -> str:
+    """Strips the trailing chain identifier from a ProLIF residue label
+    ('PHE132.A' -> 'PHE132'), so the same physical position counts once
+    regardless of which chain letter a given deposition assigned it.
+
+    SIFTS remapping (see posegate.residue_mapping) made residue NUMBERS
+    comparable across depositions, but the labels still carried chain
+    letters, and independent depositions of the same protein routinely
+    assign different letters to equivalent crystallographic copies. That
+    splits one physical residue into two counted labels and halves its
+    apparent conservation. Found on carbonic anhydrase XIII, where
+    'PHE132.A' (0.33) and 'PHE132.B' (0.40) were mined as separate rows
+    -- together 0.73 and rank 1, apart neither reaching the top -- which
+    drove leave-one-out top-1 accuracy to 0% on a 15-structure, HIGH-
+    reliability ensemble. Same class of bug as the ERalpha numbering
+    failure, one level up: numbers were fixed, labels were not.
+
+    Collapsing is correct for a monomeric enzyme crystallized with
+    several copies in the asymmetric unit, and for a symmetric multimer
+    whose chains are interchangeable (HIV protease's homodimer -- the
+    resistance_position_test.py analysis hand-implemented exactly this
+    collapse for that reason). It is NOT correct for a genuinely
+    asymmetric multi-chain receptor, where chain identity is real
+    information; those are already detected and reported as an
+    unsupported target class before mining (see
+    prep_ensemble.is_asymmetric_multichain).
+    """
+    return residue_label.rsplit('.', 1)[0] if '.' in residue_label else residue_label
 
 
 def _top_k_predicted_residues(mined_rows: List[Dict[str, Any]], k: int,
@@ -217,7 +251,7 @@ def _structure_contact_residues(structure: Dict[str, str]):
     residues = set()
     for (_, pres), interactions in ifp.items():
         if SPECIFIC_INTERACTIONS.intersection(interactions):
-            residues.add(str(pres).upper())
+            residues.add(collapse_chain(str(pres).upper()))
     return residues
 
 

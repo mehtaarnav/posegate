@@ -172,3 +172,47 @@ def test_mine_conserved_contacts_skips_a_structure_whose_interaction_detection_f
     # against n_ensemble=3, not silently averaged in as if 4 had loaded.
     assert top['n_ensemble'] == 3
     assert top['frequency'] == 1.0
+
+
+def test_collapse_chain_strips_chain_identifier():
+    from posegate.conserved_contacts import collapse_chain
+    assert collapse_chain('PHE132.A') == 'PHE132'
+    assert collapse_chain('PHE132.B') == 'PHE132'
+    assert collapse_chain('ZN301.B') == 'ZN301'
+    # no chain suffix present -- returned unchanged, not truncated
+    assert collapse_chain('PHE132') == 'PHE132'
+
+
+def test_mine_conserved_contacts_merges_equivalent_copies_across_chain_letters(tmp_path, monkeypatch):
+    """Two depositions of the same monomeric protein that lettered their
+    crystallographic copies differently must contribute to ONE residue's
+    count, not two. Found on carbonic anhydrase XIII, where PHE132.A and
+    PHE132.B were mined as separate rows (0.33 and 0.40) instead of one
+    row at 0.73, driving leave-one-out top-1 accuracy to 0% on a
+    15-structure HIGH-reliability ensemble."""
+    import posegate.conserved_contacts as cc
+
+    structures = [_make_structure(tmp_path, f"s{i}", shift=(0, 0, 0)) for i in range(4)]
+
+    class _FakeResidue:
+        def __init__(self, label):
+            self._label = label
+        def __str__(self):
+            return self._label
+
+    # Same physical residue, lettered chain A in half the ensemble and
+    # chain B in the other half -- exactly the CA13 situation.
+    calls = {'n': 0}
+
+    def fake_build_ifp(lig, rec):
+        calls['n'] += 1
+        chain = 'A' if calls['n'] <= 2 else 'B'
+        return {(0, _FakeResidue(f'PHE132.{chain}')): ['Hydrophobic']}
+
+    monkeypatch.setattr(cc, 'build_ifp', fake_build_ifp)
+    results = cc.mine_conserved_contacts(structures)
+
+    assert len(results) == 1, f"expected one merged residue row, got {results}"
+    assert results[0]['residue'] == 'PHE132'
+    assert results[0]['n_structures'] == 4
+    assert results[0]['frequency'] == 1.0
