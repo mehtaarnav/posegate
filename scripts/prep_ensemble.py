@@ -183,6 +183,7 @@ def prep_structure(pdb_id: str, pdb_path: str, ligand_resname: str, out_dir: str
     # chain that was never opened).
     filter_chains(pdb_path, keep_chains, receptor_input)
 
+    residue_map = None
     if uniprot_acc:
         # Author residue numbers are not comparable across independent
         # PDB depositions (different construct boundaries/isoforms can
@@ -202,7 +203,17 @@ def prep_structure(pdb_id: str, pdb_path: str, ligand_resname: str, out_dir: str
     prepare_receptor_pickle(receptor_input, receptor_pkl)
 
     return {'pdb_id': pdb_id, 'ligand_sdf': ligand_sdf, 'receptor_pdb': receptor_pkl,
-            'asymmetric_multichain': asymmetric}
+            'asymmetric_multichain': asymmetric,
+            # {(chain, author_resnum): uniprot_resnum} for this structure,
+            # or None if no --uniprot_acc was given. Kept so callers can
+            # show a mined UniProt-numbered residue's ACTUAL author number
+            # in each source structure -- what a user would need to click
+            # on in PyMOL/ChimeraX, and a place inconsistency across the
+            # ensemble becomes directly visible instead of requiring a
+            # one-off diagnostic script each time (see conversation: the
+            # trypsin numbering misdiagnosis this display exists to
+            # prevent happening again).
+            'residue_map': residue_map}
 
 
 def main():

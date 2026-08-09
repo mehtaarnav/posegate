@@ -37,6 +37,7 @@ from datetime import datetime, timezone
 import requests
 
 from posegate.conserved_contacts import mine_conserved_contacts, leave_one_out_validate
+from posegate.numbering_display import residue_numbering_table
 # Sibling script, not a package module (scripts/ has no __init__.py):
 # importable directly because running `python scripts/mine_target.py`
 # puts this file's own directory on sys.path.
@@ -265,13 +266,20 @@ def main():
     print(f"\nMining conserved contacts across {len(prepped)} structures...")
     results = mine_conserved_contacts(prepped)
     specific = [r for r in results if r['interaction'] != 'VdWContact']
+    top_specific = residue_numbering_table(specific, prepped, top_n=args.top_n)
 
-    print(f"\n{'Residue':<14}{'Interaction':<14}{'N':>4}{'Frequency':>12}  95% CI")
-    print('-' * 60)
-    for r in specific[:args.top_n]:
+    # 'Native #' is the author residue number(s) this row's UniProt
+    # position actually corresponds to in the source structures -- what
+    # a user needs to type into PyMOL/ChimeraX, not the UniProt number
+    # in the 'Residue' column. Shown side by side so a raw-number
+    # assumption never has to be checked with a one-off script again
+    # (see posegate.numbering_display's docstring for why this exists).
+    print(f"\n{'Residue':<14}{'Interaction':<14}{'N':>4}{'Frequency':>12}  95% CI     {'Native #'}")
+    print('-' * 80)
+    for r in top_specific:
         lo, hi = r['ci95']
         print(f"{r['residue']:<14}{r['interaction']:<14}{r['n_structures']:>4}{r['frequency']:>12.2f}"
-              f"  [{lo:.2f}, {hi:.2f}]")
+              f"  [{lo:.2f}, {hi:.2f}]  {r['native_numbering']}")
 
     self_validation = None
     if not args.skip_self_validation:
@@ -297,9 +305,15 @@ def main():
         'unsupported_target_class': bool(asymmetric_ids),
     }
 
+    # Every mined row, not just the printed top-N, carries its native
+    # (author) numbering in the saved JSON -- a downstream reader
+    # shouldn't need to recompute this from the prepped structures to
+    # answer "what do I actually select in PyMOL for this residue."
+    mined_with_native = residue_numbering_table(results, prepped, top_n=None)
+
     out_json = os.path.join(args.out_dir, 'mined_result.json')
     with open(out_json, 'w') as f:
-        json.dump({'provenance': provenance, 'mined': results,
+        json.dump({'provenance': provenance, 'mined': mined_with_native,
                     'self_validation': self_validation}, f, indent=2)
     print(f"\nWrote {out_json}")
 
