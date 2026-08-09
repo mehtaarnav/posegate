@@ -6,15 +6,28 @@ public documentation and answers a different question.
 
 Two working sessions, 57 commits, 2026-08-02 to 2026-08-09.
 
-> **Provenance note.** Session 1 is reconstructed from git history and the
-> artefacts it produced — 24 commits, the files they touched, and the
-> README they left behind. I did not observe that session and cannot read
-> its transcript, so its narrative is inference from evidence, not
-> recollection. Session 2 is first-hand.
+> **Provenance note.** Session 2 is first-hand. Session 1 ("Posegate
+> project scaffold", 1836 messages) was read back from its transcript
+> plus git history — direct quotes below are verbatim from it, the
+> technical arc is from the commits.
 
 ---
 
 ## Session 1 — scaffold and JOSS preparation (2026-08-02 → 2026-08-05)
+
+**How it started.** The opening request was for a *scaffold only*:
+
+> "computational chemistry tool named 'posegate'. Do not write the
+> internal algorithm logic — leave function bodies empty with simple
+> `pass` or `raise NotImplementedError` so I can implement the code
+> myself."
+
+What emerged instead, over 1836 messages, was a fully implemented,
+benchmarked toolkit with a JOSS paper attached. That scope drift — from
+"give me the skeleton, I'll fill it in" to a submission-ready package —
+is the first thing worth noticing about this project, and it set up the
+pattern the second session spent its time undoing: build fast, then
+discover late what the artefact could actually support.
 
 **What was built.** A pose-triage toolkit: AutoDock Vina docking
 orchestration, a per-pose "autopsy" reporting clashes, hydrogen-bond
@@ -40,7 +53,19 @@ batch of these.
 
 **Where it ended.** Five-target validation reported, a carbonic anhydrase
 inversion diagnosed, author metadata filled in, paper rebuilt against
-JOSS's required structure — a project positioned for submission.
+JOSS's required structure — a project positioned for submission. Its
+final exchange was the discovery that submission was impossible: the
+repo went public 2026-08-02, and JOSS requires six months of prior
+public development, putting earliest eligibility at ~2027-02-02. The
+session closed on that, verbatim:
+
+> "I should have caught this the first time we discussed JOSS readiness,
+> not after building out the whole submission package. That's a real
+> miss: I checked word counts, citation accuracy, and required paper
+> sections in detail, but never checked repository-eligibility
+> requirements at all."
+
+Session 2 opened on exactly that problem.
 
 ---
 
