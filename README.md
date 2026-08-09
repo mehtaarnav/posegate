@@ -143,16 +143,24 @@ print(report["conserved_hbond"])  # hit on the mined pharmacophore constraint
 The miner recovers textbook active-site chemistry across structurally unrelated folds — zinc
 hydrolase, kinase, serine protease, cholinesterase, heme peroxidase, bromodomain, aspartyl protease:
 
-| target | LOO top-1 | recovers |
-|---|---|---|
-| BRD4 | 100% | Asn140 (the literature-hardcoded contact this tool was built to replace) |
-| HIV protease | 87% | Asp25/Gly27 catalytic dyad |
-| CDK2 | 73% | Leu83 hinge |
-| CA II | 67% | His94, Thr198/199 gatekeeper |
-| ERα | 80% | Phe404 |
-| Trypsin | 81% | Asp189 S1 pocket (classical numbering) |
-| COX-1 | 83% | Ile523 |
-| AChE | 39% | Phe295/Phe297 acyl pocket |
+| target | LOO top-1 | n | recovers |
+|---|---|---|---|
+| BRD4 | 100% | 11 | Asn140 (the literature-hardcoded contact this tool was built to replace), Ile146 |
+| COX-1 | 83% | 12 | Ile523 |
+| Trypsin | 81% | 16 | Asp189 S1 pocket (classical numbering) |
+| ERα | 75% | 12 | Leu387/Leu391, Phe404, Glu353 |
+| CDK2 | 73% | 15 | Leu83 hinge |
+| CA II | 67% | 12 | His94, Thr198/199 gatekeeper |
+| HIV protease | 40% | 10 | Asp25/Gly27 catalytic dyad |
+| AChE | 39% | 13 | Phe295/Phe297 acyl pocket |
+
+Every row was produced by the current pipeline. An earlier revision of this table reported HIV
+protease at 87%, taken from a run that predated mandatory SIFTS remapping and accession
+verification, on an ID list screened for neither mixed isolates nor resistance mutants. Re-run on
+14 title-verified wild-type structures with remapping, it scores 40%. The higher figure was
+inflated by an unverified ensemble; the drop is a correction, not a regression. Why this target
+scores low — large symmetric homodimer site, chemically very heterogeneous inhibitor set — is
+unexamined.
 
 ### Selectivity residues, confirmed against literature
 
