@@ -35,6 +35,23 @@ The structural filter is doing the discriminative work: it reduces 260
 positions to ~18 genuine contact positions, and variability ranking is
 only meaningful *within* that set. **Threat retired.**
 
+## Tested and NOT survived
+
+**Does the tool's output predict experimentally achievable selectivity?**
+This is the direct H1-vs-H2 test the whole threat list turned on, and it
+was built and run (EXPERIMENTAL_VALIDATION_RESULT.md, ~43,000 ChEMBL Ki
+measurements, 21 isoform pairs). Mined contact divergence vs experimental
+selectivity: rho = +0.244, p = 0.287. Whole-protein divergence control:
+rho = +0.199. Random non-contact position sets match or beat the real one
+11.3% of the time. Alternative observables are worse, not better, so the
+null is not an artifact of the pre-specified choice.
+
+At the aggregate level the evidence does **not** favour H1 over H2.
+Threat D is therefore no longer a framing concern to be argued about --
+it is a measured result. The supportable claim is "systematises and ranks
+what the structural record encodes", not "predicts achievable
+selectivity".
+
 ## (1) Conclusion-threatening
 
 **A. Retrospective validation with an unknown denominator.** Most
